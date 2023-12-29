@@ -1,10 +1,4 @@
-use std::ops::Index;
-
 use crate::lexer::LiteralKind::{DIGIT, LETTER, OTHER, WHITESPACE};
-
-fn from_ascii(name: &[u8]) -> String {
-    return std::str::from_utf8(name).unwrap().to_string()
-}
 
 fn from_ascii_vec(name: Vec<u8>) -> String {
     return String::from_utf8(name).unwrap(); // todo
@@ -52,6 +46,7 @@ impl From<char> for LiteralKind {
         }
     }
 }
+
 pub struct Lexer {
     input: Vec<u8>,
     ch: char,
@@ -109,25 +104,19 @@ impl Lexer {
             '}' => Token::RBRACE,
 
             '\0' => Token::EOF,
-            c => {
-                match LiteralKind::from(c) {
+            c => match LiteralKind::from(c) {
                     LETTER => {
-                        let name = self.agglomerate(&LETTER);
-                        match name[..] {
-                            [b'l', b'e', b't'] => Token::LET,
-                            [b'f', b'n'] => Token::FUNCTION,
-                            _ => Token::IDENT { value: from_ascii_vec(name) }
+                        let name = from_ascii_vec(self.agglomerate(&LETTER));
+                        match name.as_str() {
+                            "let" => Token::LET,
+                            "fn" => Token::FUNCTION,
+                            _ => Token::IDENT { value: name }
                         }
                     }
 
                     DIGIT => {
                         Token::INT {
-                            value: self.agglomerate(&DIGIT)
-                                .iter()
-                                .map(|d| *d as char)
-                                .collect::<String>()
-                                .parse::<i32>()
-                                .unwrap()
+                            value: from_ascii_vec(self.agglomerate(&DIGIT)).parse::<i32>().unwrap()
                         }
                     }
 
@@ -141,7 +130,6 @@ impl Lexer {
                         Token::ILLEGAL { value: from_ascii_vec(self.agglomerate(&OTHER)) }
                     }
                 }
-            }
         };
     }
 
@@ -162,13 +150,11 @@ impl Lexer {
         let ch = self.input[idx];
         let expected = LiteralKind::from(ch as char);
         return match expected {
-            c if &c == kind => Some(ch),
+            c if c == *kind => Some(ch),
             _ => None
         };
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
