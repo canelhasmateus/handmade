@@ -1,7 +1,11 @@
 use crate::lexer::LiteralKind::{DIGIT, EQ, LETTER, OTHER, WHITESPACE};
 
-fn from_ascii_vec(name: Vec<u8>) -> String {
+fn str_from_vec(name: Vec<u8>) -> String {
     return String::from_utf8(name).unwrap(); // todo
+}
+
+fn slice_from_vec(vec: &Vec<u8>) -> &str {
+    std::str::from_utf8(vec.as_slice()).unwrap()
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -89,7 +93,7 @@ impl From<&str> for Lexer {
 }
 
 impl Lexer {
-    fn read_char(&mut self) {
+    fn read_char(&mut self) -> char {
         self.ch = if self.read_position >= self.input.len() {
             '\0'
         } else {
@@ -98,6 +102,7 @@ impl Lexer {
 
         self.position = self.read_position;
         self.read_position += 1;
+        return self.ch
     }
 
     fn next_token(&mut self) -> Token {
@@ -112,9 +117,7 @@ impl Lexer {
     }
 
     fn next_real_token(&mut self) -> Token {
-        self.read_char();
-
-        return match self.ch {
+        return match self.read_char() {
             '*' => Token::ASTERISK,
             '/' => Token::SLASH,
             '+' => Token::PLUS,
@@ -133,59 +136,36 @@ impl Lexer {
 
             '\0' => Token::EOF,
 
-            '!' => match self.peek() {
-                '=' => {
-                    self.read_char();
-                    Token::DIFFERS
-                },
-                _ => Token::BANG
-            }
-
-            '=' => match self.peek() {
-                '=' => {
-                    self.read_char();
-                    Token::EQUALS
-                },
-                _ => Token::ASSIGN
-            }
-
             c => match LiteralKind::from(c) {
+                DIGIT => Token::INT { value: str_from_vec(self.span(DIGIT)).parse::<i32>().unwrap() },
 
-                DIGIT => Token::INT { value: from_ascii_vec(self.agglomerate(DIGIT)).parse::<i32>().unwrap() },
+                WHITESPACE => Token::WHITESPACE { value: str_from_vec(self.span(WHITESPACE)) },
 
-                WHITESPACE => Token::WHITESPACE { value: from_ascii_vec(self.agglomerate(WHITESPACE)) },
+                OTHER => Token::ILLEGAL { value: str_from_vec(self.span(OTHER)) },
 
-                OTHER => Token::ILLEGAL { value: from_ascii_vec(self.agglomerate(OTHER)) },
-
-                EQ => {
-                    let span = from_ascii_vec(self.agglomerate(EQ));
-                    match span.as_str() {
-                        "=" => Token::ASSIGN,
-                        "!" => Token::BANG,
-                        "==" => Token::EQUALS,
-                        "!=" => Token::DIFFERS,
-                        _ => Token::ILLEGAL { value: span }
-                    }
+                EQ => match slice_from_vec(&self.span(EQ)) {
+                    "=" => Token::ASSIGN,
+                    "!" => Token::BANG,
+                    "==" => Token::EQUALS,
+                    "!=" => Token::DIFFERS,
+                    s => Token::ILLEGAL { value: s.into() }
                 }
 
-                LETTER => {
-                    let name = from_ascii_vec(self.agglomerate(LETTER));
-                    match name.as_str() {
-                        "let" => Token::LET,
-                        "fn" => Token::FUNCTION,
-                        "true" => Token::TRUE,
-                        "false" => Token::FALSE,
-                        "if" => Token::IF,
-                        "else" => Token::ELSE,
-                        "return" => Token::RETURN,
-                        _ => Token::IDENT { value: name }
-                    }
+                LETTER => match slice_from_vec(&self.span(LETTER)) {
+                    "let" => Token::LET,
+                    "fn" => Token::FUNCTION,
+                    "true" => Token::TRUE,
+                    "false" => Token::FALSE,
+                    "if" => Token::IF,
+                    "else" => Token::ELSE,
+                    "return" => Token::RETURN,
+                    s => Token::IDENT { value: s.into() }
                 }
             }
         };
     }
 
-    fn agglomerate(&mut self, kind: LiteralKind) -> Vec<u8> {
+    fn span(&mut self, kind: LiteralKind) -> Vec<u8> {
         let initial_pos = self.position;
         while LiteralKind::from(self.peek()) == kind {
             self.read_char();
