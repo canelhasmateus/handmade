@@ -26,6 +26,7 @@ enum Token {
     ILLEGAL { value: String },
     IDENT { value: String },
     INT { value: i32 },
+    WHITESPACE { value: String }
 }
 
 #[derive(Eq, PartialEq)]
@@ -82,8 +83,18 @@ impl Lexer {
     }
 
     fn next_token(&mut self) -> Token {
+        loop {
+            let token = self.next_real_token();
+            if let Token::WHITESPACE { value: _ } = token {
+                continue
+            } else {
+                return token
+            }
+        }
+    }
+
+    fn next_real_token(&mut self) -> Token {
         self.read_char();
-        self.skip_whitespace();
         return match self.ch {
             '=' => Token::ASSIGN,
             '+' => Token::PLUS,
@@ -105,7 +116,6 @@ impl Lexer {
                         match name[..] {
                             [b'l', b'e', b't'] => Token::LET,
                             [b'f', b'n'] => Token::FUNCTION,
-                            [] => Token::ILLEGAL { value: String::from(c) },
                             _ => Token::IDENT { value: from_ascii_vec(name) }
                         }
                     }
@@ -120,22 +130,19 @@ impl Lexer {
                                 .unwrap()
                         }
                     }
+
                     WHITESPACE => {
-                        todo!()
+                        Token::WHITESPACE {
+                            value: from_ascii_vec(self.agglomerate(&WHITESPACE))
+                        }
                     }
-                    LiteralKind::OTHER => {
-                        todo!()
+
+                    OTHER => {
+                        Token::ILLEGAL { value: from_ascii_vec(self.agglomerate(&OTHER)) }
                     }
                 }
             }
         };
-    }
-
-
-    fn skip_whitespace(&mut self) -> () {
-        while LiteralKind::from(self.ch) == WHITESPACE {
-            self.read_char()
-        }
     }
 
     fn agglomerate(&mut self, kind: &LiteralKind) -> Vec<u8> {
