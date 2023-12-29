@@ -1,4 +1,4 @@
-use crate::lexer::LiteralKind::{DIGIT, LETTER, OTHER, WHITESPACE};
+use crate::lexer::LiteralKind::{DIGIT, EQ, LETTER, OTHER, WHITESPACE};
 
 fn from_ascii_vec(name: Vec<u8>) -> String {
     return String::from_utf8(name).unwrap(); // todo
@@ -45,6 +45,7 @@ enum Token {
 
 #[derive(Eq, PartialEq)]
 enum LiteralKind {
+    EQ,
     LETTER,
     DIGIT,
     WHITESPACE,
@@ -59,6 +60,8 @@ impl From<char> for LiteralKind {
             '\n' => WHITESPACE,
             '\r' => WHITESPACE,
             '_' => LETTER,
+            '=' => EQ,
+            '!' => EQ,
             'a'..='z' => LETTER,
             'A'..='Z' => LETTER,
             '0'..='9' => DIGIT,
@@ -112,20 +115,6 @@ impl Lexer {
         self.read_char();
 
         return match self.ch {
-            '!' => match self.peek() {
-                '=' => {
-                    self.read_char();
-                    Token::DIFFERS
-                },
-                _ => Token::BANG
-            }
-            '=' => match self.peek() {
-                '=' => {
-                    self.read_char();
-                    Token::EQUALS
-                },
-                _ => Token::ASSIGN
-            }
             '*' => Token::ASTERISK,
             '/' => Token::SLASH,
             '+' => Token::PLUS,
@@ -142,30 +131,57 @@ impl Lexer {
             '<' => Token::LT,
             '>' => Token::GT,
 
-
             '\0' => Token::EOF,
+
+            '!' => match self.peek() {
+                '=' => {
+                    self.read_char();
+                    Token::DIFFERS
+                },
+                _ => Token::BANG
+            }
+
+            '=' => match self.peek() {
+                '=' => {
+                    self.read_char();
+                    Token::EQUALS
+                },
+                _ => Token::ASSIGN
+            }
+
             c => match LiteralKind::from(c) {
-                LETTER => {
-                    let name = from_ascii_vec(self.agglomerate(LETTER));
-                        match name.as_str() {
-                            "let" => Token::LET,
-                            "fn" => Token::FUNCTION,
-                            "true" => Token::TRUE,
-                            "false" => Token::FALSE,
-                            "if" => Token::IF,
-                            "else" => Token::ELSE,
-                            "return" => Token::RETURN,
-                            _ => Token::IDENT { value: name }
-                        }
-                    }
 
                 DIGIT => Token::INT { value: from_ascii_vec(self.agglomerate(DIGIT)).parse::<i32>().unwrap() },
 
                 WHITESPACE => Token::WHITESPACE { value: from_ascii_vec(self.agglomerate(WHITESPACE)) },
 
-                OTHER => Token::ILLEGAL { value: from_ascii_vec(self.agglomerate(OTHER)) }
+                OTHER => Token::ILLEGAL { value: from_ascii_vec(self.agglomerate(OTHER)) },
 
+                EQ => {
+                    let span = from_ascii_vec(self.agglomerate(EQ));
+                    match span.as_str() {
+                        "=" => Token::ASSIGN,
+                        "!" => Token::BANG,
+                        "==" => Token::EQUALS,
+                        "!=" => Token::DIFFERS,
+                        _ => Token::ILLEGAL { value: span }
+                    }
                 }
+
+                LETTER => {
+                    let name = from_ascii_vec(self.agglomerate(LETTER));
+                    match name.as_str() {
+                        "let" => Token::LET,
+                        "fn" => Token::FUNCTION,
+                        "true" => Token::TRUE,
+                        "false" => Token::FALSE,
+                        "if" => Token::IF,
+                        "else" => Token::ELSE,
+                        "return" => Token::RETURN,
+                        _ => Token::IDENT { value: name }
+                    }
+                }
+            }
         };
     }
 
