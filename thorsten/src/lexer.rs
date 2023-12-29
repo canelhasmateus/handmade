@@ -7,20 +7,40 @@ fn from_ascii_vec(name: Vec<u8>) -> String {
 #[derive(Debug, Eq, PartialEq)]
 enum Token {
     EOF,
+    BANG,
     ASSIGN,
-    PLUS,
     COMMA,
     SEMICOLON,
+
+    PLUS,
+    MINUS,
+    ASTERISK,
+    SLASH,
+
+    LT,
+    GT,
+
     LPAREN,
     RPAREN,
+
     LBRACE,
     RBRACE,
+
+    EQUALS,
+    DIFFERS,
+
     FUNCTION,
     LET,
+    TRUE,
+    FALSE,
+    IF,
+    ELSE,
+    RETURN,
+
     ILLEGAL { value: String },
     IDENT { value: String },
     INT { value: i32 },
-    WHITESPACE { value: String }
+    WHITESPACE { value: String },
 }
 
 #[derive(Eq, PartialEq)]
@@ -90,9 +110,26 @@ impl Lexer {
 
     fn next_real_token(&mut self) -> Token {
         self.read_char();
+
         return match self.ch {
-            '=' => Token::ASSIGN,
+            '!' => match self.peek() {
+                '=' => {
+                    self.read_char();
+                    Token::DIFFERS
+                },
+                _ => Token::BANG
+            }
+            '=' => match self.peek() {
+                '=' => {
+                    self.read_char();
+                    Token::EQUALS
+                },
+                _ => Token::ASSIGN
+            }
+            '*' => Token::ASTERISK,
+            '/' => Token::SLASH,
             '+' => Token::PLUS,
+            '-' => Token::MINUS,
 
             ',' => Token::COMMA,
             ';' => Token::SEMICOLON,
@@ -102,57 +139,51 @@ impl Lexer {
 
             '{' => Token::LBRACE,
             '}' => Token::RBRACE,
+            '<' => Token::LT,
+            '>' => Token::GT,
+
 
             '\0' => Token::EOF,
             c => match LiteralKind::from(c) {
-                    LETTER => {
-                        let name = from_ascii_vec(self.agglomerate(&LETTER));
+                LETTER => {
+                    let name = from_ascii_vec(self.agglomerate(LETTER));
                         match name.as_str() {
                             "let" => Token::LET,
                             "fn" => Token::FUNCTION,
+                            "true" => Token::TRUE,
+                            "false" => Token::FALSE,
+                            "if" => Token::IF,
+                            "else" => Token::ELSE,
+                            "return" => Token::RETURN,
                             _ => Token::IDENT { value: name }
                         }
                     }
 
-                    DIGIT => {
-                        Token::INT {
-                            value: from_ascii_vec(self.agglomerate(&DIGIT)).parse::<i32>().unwrap()
-                        }
-                    }
+                DIGIT => Token::INT { value: from_ascii_vec(self.agglomerate(DIGIT)).parse::<i32>().unwrap() },
 
-                    WHITESPACE => {
-                        Token::WHITESPACE {
-                            value: from_ascii_vec(self.agglomerate(&WHITESPACE))
-                        }
-                    }
+                WHITESPACE => Token::WHITESPACE { value: from_ascii_vec(self.agglomerate(WHITESPACE)) },
 
-                    OTHER => {
-                        Token::ILLEGAL { value: from_ascii_vec(self.agglomerate(&OTHER)) }
-                    }
+                OTHER => Token::ILLEGAL { value: from_ascii_vec(self.agglomerate(OTHER)) }
+
                 }
         };
     }
 
-    fn agglomerate(&mut self, kind: &LiteralKind) -> Vec<u8> {
+    fn agglomerate(&mut self, kind: LiteralKind) -> Vec<u8> {
         let initial_pos = self.position;
-        while let Some(_) = self.peek(kind) {
+        while LiteralKind::from(self.peek()) == kind {
             self.read_char();
         }
 
         return self.input[initial_pos..=self.position].to_vec();
     }
 
-    fn peek(&mut self, kind: &LiteralKind) -> Option<u8> {
+    fn peek(&mut self) -> char {
         let idx = self.position + 1;
         if idx >= self.input.len() {
-            return None;
+            return '\0';
         }
-        let ch = self.input[idx];
-        let expected = LiteralKind::from(ch as char);
-        return match expected {
-            c if c == *kind => Some(ch),
-            _ => None
-        };
+        return self.input[idx] as char;
     }
 }
 
@@ -179,7 +210,9 @@ mod tests {
 
     #[test]
     fn test_base_tokens() {
-        let source = "=+(){},;";
+        let source = "
+        =+(){},;
+        ";
         let mut lexer = Lexer::from(source);
 
 
@@ -195,11 +228,13 @@ mod tests {
     }
 
     #[test]
-    fn test_all_tokens() {
-        let source = "let five = 5;
-                            let ten = 10;
-                            let add = fn(x, y) { x + y; };
-                            let result = add(five, ten);";
+    fn test_all_tokens_1() {
+        let source = "
+        let five = 5;
+        let ten = 10;
+        let add = fn(x, y) { x + y; };
+        let result = add(five, ten);
+        ";
 
         let mut lexer = Lexer::from(source);
 
@@ -246,6 +281,89 @@ mod tests {
         assert_eq!(lexer.next_token(), Token::COMMA);
         assert_eq!(lexer.next_token(), Token::IDENT { value: "ten".to_owned() });
         assert_eq!(lexer.next_token(), Token::RPAREN);
+        assert_eq!(lexer.next_token(), Token::SEMICOLON);
+        assert_eq!(lexer.next_token(), Token::EOF);
+    }
+
+    #[test]
+    fn test_all_tokens_2() {
+        let source = "
+        !-/*5;
+        5 < 10 > 5;
+        ";
+
+        let mut lexer = Lexer::from(source);
+
+        assert_eq!(lexer.next_token(), Token::BANG);
+        assert_eq!(lexer.next_token(), Token::MINUS);
+        assert_eq!(lexer.next_token(), Token::SLASH);
+        assert_eq!(lexer.next_token(), Token::ASTERISK);
+        assert_eq!(lexer.next_token(), Token::INT { value: 5 });
+        assert_eq!(lexer.next_token(), Token::SEMICOLON);
+
+        assert_eq!(lexer.next_token(), Token::INT { value: 5 });
+        assert_eq!(lexer.next_token(), Token::LT);
+        assert_eq!(lexer.next_token(), Token::INT { value: 10 });
+        assert_eq!(lexer.next_token(), Token::GT);
+        assert_eq!(lexer.next_token(), Token::INT { value: 5 });
+        assert_eq!(lexer.next_token(), Token::SEMICOLON);
+
+        assert_eq!(lexer.next_token(), Token::EOF);
+    }
+
+    #[test]
+    fn test_all_tokens_3() {
+        let source = "
+        if (5 < 10) {
+            return true;
+        } else {
+            return false;
+        }
+        ";
+
+        let mut lexer = Lexer::from(source);
+
+        assert_eq!(lexer.next_token(), Token::IF);
+        assert_eq!(lexer.next_token(), Token::LPAREN);
+        assert_eq!(lexer.next_token(), Token::INT { value: 5 });
+        assert_eq!(lexer.next_token(), Token::LT);
+        assert_eq!(lexer.next_token(), Token::INT { value: 10 });
+        assert_eq!(lexer.next_token(), Token::RPAREN);
+        assert_eq!(lexer.next_token(), Token::LBRACE);
+        {
+            assert_eq!(lexer.next_token(), Token::RETURN);
+            assert_eq!(lexer.next_token(), Token::TRUE);
+            assert_eq!(lexer.next_token(), Token::SEMICOLON);
+        }
+        assert_eq!(lexer.next_token(), Token::RBRACE);
+        assert_eq!(lexer.next_token(), Token::ELSE);
+        assert_eq!(lexer.next_token(), Token::LBRACE);
+        {
+            assert_eq!(lexer.next_token(), Token::RETURN);
+            assert_eq!(lexer.next_token(), Token::FALSE);
+            assert_eq!(lexer.next_token(), Token::SEMICOLON);
+        }
+        assert_eq!(lexer.next_token(), Token::RBRACE);
+        assert_eq!(lexer.next_token(), Token::EOF);
+    }
+
+    #[test]
+    fn test_all_tokens_4() {
+        let source = "
+        10 == 10;
+        10 != 9;
+        ";
+
+        let mut lexer = Lexer::from(source);
+
+        assert_eq!(lexer.next_token(), Token::INT { value: 10 });
+        assert_eq!(lexer.next_token(), Token::EQUALS);
+        assert_eq!(lexer.next_token(), Token::INT { value: 10 });
+        assert_eq!(lexer.next_token(), Token::SEMICOLON);
+
+        assert_eq!(lexer.next_token(), Token::INT { value: 10 });
+        assert_eq!(lexer.next_token(), Token::DIFFERS);
+        assert_eq!(lexer.next_token(), Token::INT { value: 9 });
         assert_eq!(lexer.next_token(), Token::SEMICOLON);
 
         assert_eq!(lexer.next_token(), Token::EOF);
