@@ -1,15 +1,7 @@
 use crate::lexer::LiteralKind::{DIGIT, EQ, LETTER, OTHER, WHITESPACE};
 
-fn str_from_vec(name: Vec<u8>) -> String {
-    return String::from_utf8(name).unwrap(); // todo
-}
-
-fn slice_from_vec(vec: &Vec<u8>) -> &str {
-    std::str::from_utf8(vec.as_slice()).unwrap()
-}
-
 #[derive(Debug, Eq, PartialEq)]
-enum Token {
+pub enum Token {
     EOF,
     BANG,
     ASSIGN,
@@ -75,7 +67,7 @@ impl From<char> for LiteralKind {
 }
 
 pub struct Lexer {
-    input: Vec<u8>,
+    input: String,
     ch: char,
     position: usize,
     read_position: usize,
@@ -84,7 +76,7 @@ pub struct Lexer {
 impl From<&str> for Lexer {
     fn from(value: &str) -> Self {
         return Lexer {
-            input: value.as_bytes().to_owned(), // todo
+            input: value.to_owned(), // todo
             ch: '\0',
             position: 0,
             read_position: 0,
@@ -93,19 +85,7 @@ impl From<&str> for Lexer {
 }
 
 impl Lexer {
-    fn read_char(&mut self) -> char {
-        self.ch = if self.read_position >= self.input.len() {
-            '\0'
-        } else {
-            self.input[self.read_position] as char
-        };
-
-        self.position = self.read_position;
-        self.read_position += 1;
-        return self.ch
-    }
-
-    fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> Token {
         loop {
             let token = self.next_real_token();
             if let Token::WHITESPACE { value: _ } = token {
@@ -115,7 +95,18 @@ impl Lexer {
             }
         }
     }
+    fn read_char(&mut self) -> char {
+        self.ch = if self.read_position >= self.input.len() {
+            '\0'
+        } else {
+            self.input.as_bytes()[self.read_position] as char
+        };
 
+        self.position = self.read_position;
+        self.read_position += 1;
+
+        return self.ch
+    }
     fn next_real_token(&mut self) -> Token {
         return match self.read_char() {
             '*' => Token::ASTERISK,
@@ -137,13 +128,13 @@ impl Lexer {
             '\0' => Token::EOF,
 
             c => match LiteralKind::from(c) {
-                DIGIT => Token::INT { value: str_from_vec(self.span(DIGIT)).parse::<i32>().unwrap() },
+                DIGIT => Token::INT { value: self.span(DIGIT).parse::<i32>().unwrap() },
 
-                WHITESPACE => Token::WHITESPACE { value: str_from_vec(self.span(WHITESPACE)) },
+                WHITESPACE => Token::WHITESPACE { value: self.span(WHITESPACE).into() },
 
-                OTHER => Token::ILLEGAL { value: str_from_vec(self.span(OTHER)) },
+                OTHER => Token::ILLEGAL { value: self.span(OTHER).into() },
 
-                EQ => match slice_from_vec(&self.span(EQ)) {
+                EQ => match self.span(EQ) {
                     "=" => Token::ASSIGN,
                     "!" => Token::BANG,
                     "==" => Token::EQUALS,
@@ -151,7 +142,7 @@ impl Lexer {
                     s => Token::ILLEGAL { value: s.into() }
                 }
 
-                LETTER => match slice_from_vec(&self.span(LETTER)) {
+                LETTER => match self.span(LETTER) {
                     "let" => Token::LET,
                     "fn" => Token::FUNCTION,
                     "true" => Token::TRUE,
@@ -165,13 +156,13 @@ impl Lexer {
         };
     }
 
-    fn span(&mut self, kind: LiteralKind) -> Vec<u8> {
+    fn span(&mut self, kind: LiteralKind) -> &str {
         let initial_pos = self.position;
         while LiteralKind::from(self.peek()) == kind {
             self.read_char();
         }
 
-        return self.input[initial_pos..=self.position].to_vec();
+        return &self.input[initial_pos..=self.position];
     }
 
     fn peek(&mut self) -> char {
@@ -179,7 +170,7 @@ impl Lexer {
         if idx >= self.input.len() {
             return '\0';
         }
-        return self.input[idx] as char;
+        return self.input.as_bytes()[idx] as char;
     }
 }
 
@@ -191,14 +182,14 @@ mod tests {
     fn lexer_initialization() {
         let mut lexer = Lexer::from("a");
 
-        assert_eq!(lexer.input, vec!(b'a'));
+        assert_eq!(lexer.input, "a");
         assert_eq!(lexer.ch, '\0');
         assert_eq!(lexer.position, 0);
         assert_eq!(lexer.read_position, 0);
 
         lexer.read_char();
 
-        assert_eq!(lexer.input, vec!(b'a'));
+        assert_eq!(lexer.input, "a");
         assert_eq!(lexer.ch, 'a');
         assert_eq!(lexer.position, 0);
         assert_eq!(lexer.read_position, 1);
