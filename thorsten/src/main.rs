@@ -1,5 +1,14 @@
+use std::io::{stdin, stdout};
+
+use crate::repl::Repl;
+
 mod lexer;
+mod repl;
 
 fn main() {
-    println!("Hello, world!");
+    let repl = Repl {
+        input: stdin(),
+        output: stdout(),
+    };
+    repl.run();
 }
