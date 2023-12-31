@@ -21,7 +21,7 @@ impl Repl {
 
             loop {
                 let token = lexer.next_token();
-                if token == Token::EOF {
+                if token == Token::Eof {
                     break;
                 }
 
