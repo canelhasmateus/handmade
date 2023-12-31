@@ -1,6 +1,44 @@
 use crate::lexer::LiteralKind::{DIGIT, EQ, LETTER, OTHER, WHITESPACE};
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub struct Identifier {
+    value: String,
+}
+
+impl From<&str> for Identifier {
+    fn from(value: &str) -> Self {
+        return Identifier { value: value.into() }
+    }
+}
+
+#[derive(Eq, PartialEq)]
+enum LiteralKind {
+    EQ,
+    LETTER,
+    DIGIT,
+    WHITESPACE,
+    OTHER,
+}
+
+impl From<char> for LiteralKind {
+    fn from(value: char) -> Self {
+        match value {
+            ' ' => WHITESPACE,
+            '\t' => WHITESPACE,
+            '\n' => WHITESPACE,
+            '\r' => WHITESPACE,
+            '_' => LETTER,
+            '=' => EQ,
+            '!' => EQ,
+            'a'..='z' => LETTER,
+            'A'..='Z' => LETTER,
+            '0'..='9' => DIGIT,
+            _ => OTHER
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Token {
     Eof,
     Bang,
@@ -34,36 +72,9 @@ pub enum Token {
     Return,
 
     Illegal { value: String },
-    Ident { value: String },
+    Ident { value: Identifier },
     Int { value: i32 },
     Blank { value: String },
-}
-
-#[derive(Eq, PartialEq)]
-enum LiteralKind {
-    EQ,
-    LETTER,
-    DIGIT,
-    WHITESPACE,
-    OTHER,
-}
-
-impl From<char> for LiteralKind {
-    fn from(value: char) -> Self {
-        match value {
-            ' ' => WHITESPACE,
-            '\t' => WHITESPACE,
-            '\n' => WHITESPACE,
-            '\r' => WHITESPACE,
-            '_' => LETTER,
-            '=' => EQ,
-            '!' => EQ,
-            'a'..='z' => LETTER,
-            'A'..='Z' => LETTER,
-            '0'..='9' => DIGIT,
-            _ => OTHER
-        }
-    }
 }
 
 pub struct Lexer {
@@ -150,7 +161,7 @@ impl Lexer {
                     "if" => Token::If,
                     "else" => Token::Else,
                     "return" => Token::Return,
-                    s => Token::Ident { value: s.into() }
+                    s => Token::Ident { value: Identifier::from(s) }
                 }
             }
         };
@@ -226,32 +237,32 @@ mod tests {
         let mut lexer = Lexer::from(source);
 
         assert_eq!(lexer.next_token(), Token::Let);
-        assert_eq!(lexer.next_token(), Token::Ident { value: "five".to_owned() });
+        assert_eq!(lexer.next_token(), Token::Ident { value: Identifier::from("five") });
         assert_eq!(lexer.next_token(), Token::Assign);
         assert_eq!(lexer.next_token(), Token::Int { value: 5 });
         assert_eq!(lexer.next_token(), Token::Semicolon);
 
         assert_eq!(lexer.next_token(), Token::Let);
-        assert_eq!(lexer.next_token(), Token::Ident { value: "ten".to_owned() });
+        assert_eq!(lexer.next_token(), Token::Ident { value: Identifier::from("ten") });
         assert_eq!(lexer.next_token(), Token::Assign);
         assert_eq!(lexer.next_token(), Token::Int { value: 10 });
         assert_eq!(lexer.next_token(), Token::Semicolon);
 
         assert_eq!(lexer.next_token(), Token::Let);
-        assert_eq!(lexer.next_token(), Token::Ident { value: "add".to_owned() });
+        assert_eq!(lexer.next_token(), Token::Ident { value: Identifier::from("add") });
         assert_eq!(lexer.next_token(), Token::Assign);
         assert_eq!(lexer.next_token(), Token::Function);
         assert_eq!(lexer.next_token(), Token::Lparen);
-        assert_eq!(lexer.next_token(), Token::Ident { value: "x".to_owned() });
+        assert_eq!(lexer.next_token(), Token::Ident { value: Identifier::from("x") });
         assert_eq!(lexer.next_token(), Token::Comma);
-        assert_eq!(lexer.next_token(), Token::Ident { value: "y".to_owned() });
+        assert_eq!(lexer.next_token(), Token::Ident { value: Identifier::from("y") });
         assert_eq!(lexer.next_token(), Token::Rparen);
         {
             assert_eq!(lexer.next_token(), Token::Lbrace);
 
-            assert_eq!(lexer.next_token(), Token::Ident { value: "x".to_owned() });
+            assert_eq!(lexer.next_token(), Token::Ident { value: Identifier::from("x") });
             assert_eq!(lexer.next_token(), Token::Plus);
-            assert_eq!(lexer.next_token(), Token::Ident { value: "y".to_owned() });
+            assert_eq!(lexer.next_token(), Token::Ident { value: Identifier::from("y") });
             assert_eq!(lexer.next_token(), Token::Semicolon);
 
             assert_eq!(lexer.next_token(), Token::Rbrace);
@@ -260,13 +271,13 @@ mod tests {
 
 
         assert_eq!(lexer.next_token(), Token::Let);
-        assert_eq!(lexer.next_token(), Token::Ident { value: "result".to_owned() });
+        assert_eq!(lexer.next_token(), Token::Ident { value: Identifier::from("result") });
         assert_eq!(lexer.next_token(), Token::Assign);
-        assert_eq!(lexer.next_token(), Token::Ident { value: "add".to_owned() });
+        assert_eq!(lexer.next_token(), Token::Ident { value: Identifier::from("add") });
         assert_eq!(lexer.next_token(), Token::Lparen);
-        assert_eq!(lexer.next_token(), Token::Ident { value: "five".to_owned() });
+        assert_eq!(lexer.next_token(), Token::Ident { value: Identifier::from("five") });
         assert_eq!(lexer.next_token(), Token::Comma);
-        assert_eq!(lexer.next_token(), Token::Ident { value: "ten".to_owned() });
+        assert_eq!(lexer.next_token(), Token::Ident { value: Identifier::from("ten") });
         assert_eq!(lexer.next_token(), Token::Rparen);
         assert_eq!(lexer.next_token(), Token::Semicolon);
         assert_eq!(lexer.next_token(), Token::Eof);
