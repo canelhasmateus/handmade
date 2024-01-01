@@ -3,8 +3,8 @@ use std::io::{stdin, stdout};
 use crate::repl::Repl;
 
 mod lexer;
-mod repl;
 mod parser;
+mod repl;
 
 fn main() {
     let repl = Repl {

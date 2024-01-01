@@ -1,5 +1,6 @@
 use crate::lexer::{Identifier, Lexer, Token};
-use crate::parser::Node::Root;
+use crate::parser::Expression::Error;
+use crate::parser::Node::{ErrorNode, Let, Return, Root};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 struct Program {
@@ -8,19 +9,15 @@ struct Program {
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Node {
-    Root { value: Program },
-    Let {
-        name: Identifier,
-        value: Expression,
-    }
-
+    ErrorNode { current: Token, peek: Token },
+    Root { program: Program },
+    Let { name: Identifier, value: Expression },
+    Return { value: Expression },
 }
-
-trait Statement {}
-
 #[derive(Debug, Eq, PartialEq, Clone)]
 enum Expression {
-    Integer { value: i32 }
+    Integer { value: i32 },
+    Error { value: Vec<Token> },
 }
 
 struct Parser {
@@ -29,18 +26,53 @@ struct Parser {
     peek: Token,
 }
 
-
 impl Parser {
     fn program(&mut self) -> Node {
-        return Root {
-            value: Program {
-                statements: vec!()
+        let mut statements = vec![];
+
+        loop {
+            if self.current == Token::Eof {
+                break;
             }
+
+            statements.push(self.next_statement())
         }
+
+        return Root {
+            program: Program { statements },
+        };
     }
     fn next_token(&mut self) {
         self.current = self.peek.clone(); // todo
         self.peek = self.lexer.next_token();
+    }
+    fn next_statement(&mut self) -> Node {
+        match (self.current.clone(), self.peek.clone()) {
+            (Token::Return, _) => {
+                while self.current != Token::Semicolon {
+                    self.next_token();
+                }
+                self.next_token();
+                Return { value: Error { value: vec!() } }
+            },
+            (Token::Let, Token::Ident { value: name }) => {
+                while self.current != Token::Semicolon {
+                    self.next_token();
+                }
+                self.next_token();
+
+                let mut value: Vec<Token> = vec![];
+                Let {
+                    name,
+                    value: Error { value },
+                }
+            }
+
+            (current, peek) => {
+                self.next_token();
+                ErrorNode { current, peek }
+            }
+        }
     }
 }
 
@@ -49,13 +81,16 @@ impl From<&str> for Parser {
         let mut lexer = Lexer::from(value);
         let current = lexer.next_token();
         let peek = lexer.next_token();
-        return Parser { lexer, current, peek }
+        return Parser {
+            lexer,
+            current,
+            peek,
+        };
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::Expression::Integer;
     use crate::parser::Node::Let;
 
     use super::*;
@@ -87,14 +122,57 @@ mod tests {
         ";
 
         let mut parser = Parser::from(input);
-        assert_eq!(parser.program(), Root {
-            value: Program {
-                statements: vec!(
-                    Let { name: Identifier::from("x"), value: Integer { value: 0 } },
-                    Let { name: Identifier::from("y"), value: Integer { value: 10 } },
-                    Let { name: Identifier::from("foobar"), value: Integer { value: 838383 } }
-                )
+
+        assert_eq!(
+            parser.next_statement(),
+            Let {
+                name: Identifier::from("x"),
+                value: Error { value: vec!() }
+            },
+        );
+        assert_eq!(
+            parser.next_statement(),
+            Let {
+                name: Identifier::from("y"),
+                value: Error { value: vec!() }
+            },
+        );
+        assert_eq!(
+            parser.next_statement(),
+            Let {
+                name: Identifier::from("foobar"),
+                value: Error { value: vec!() },
             }
-        });
+        );
+    }
+
+    #[test]
+    fn return_statements() {
+        let input = "
+        return 5;
+        return 10;
+        return 993322;
+        ";
+
+        let mut parser = Parser::from(input);
+
+        assert_eq!(
+            parser.next_statement(),
+            Return {
+                value: Error { value: vec!()}
+            },
+        );
+        assert_eq!(
+            parser.next_statement(),
+            Return {
+                value: Error { value: vec!()}
+            },
+        );
+        assert_eq!(
+            parser.next_statement(),
+            Return {
+                value: Error { value: vec!()}
+            },
+        );
     }
 }

@@ -12,7 +12,9 @@ impl Repl {
         let prompt = ">> ";
 
         loop {
-            self.output.write_all(prompt.as_ref()).expect("TODO: panic message");
+            self.output
+                .write_all(prompt.as_ref())
+                .expect("TODO: panic message");
             self.output.flush().expect("TODO: panic message");
 
             let mut input = String::new();
@@ -25,7 +27,9 @@ impl Repl {
                     break;
                 }
 
-                self.output.write(format!("{:?}\n", token).as_ref()).expect("TODO: panic message");
+                self.output
+                    .write(format!("{:?}\n", token).as_ref())
+                    .expect("TODO: panic message");
                 self.output.flush().expect("TODO: panic message");
             }
         }
