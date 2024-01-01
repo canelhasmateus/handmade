@@ -1,8 +1,11 @@
+use std::fmt::Binary;
+
 use crate::lexer::{Identifier, Lexer, Token};
-use crate::lexer::Token::Eof;
+use crate::lexer::Token::{Eof, Semicolon};
 use crate::parser::Expression::{ExprError, ExprPrefix};
 use crate::parser::Node::{StmtError, StmtExpr, StmtLet, StmtReturn};
 use crate::parser::Precedence::{Lowest, Prefix};
+use crate::parser::PrefixKind::{Minus, Not};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Precedence {
@@ -15,26 +18,85 @@ enum Precedence {
     Call,
 }
 
+impl From<&Token> for Precedence {
+    fn from(value: &Token) -> Self {
+        match value {
+            Token::Plus => Precedence::Sum,
+            Token::Minus => Precedence::Sum,
+            Token::Asterisk => Precedence::Product,
+            Token::Slash => Precedence::Product,
+            Token::Lt => Precedence::LesserGreater,
+            Token::Gt => Precedence::LesserGreater,
+            Token::Equals => Precedence::Equals,
+            Token::Differs => Precedence::Equals,
+            _ => Precedence::Lowest,
+        }
+    }
+}
+
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Node {
     StmtError { current: Token, peek: Token },
     StmtLet { name: Identifier, value: Expression },
     StmtReturn { value: Expression },
-    StmtExpr { value: Expression }
+    StmtExpr { value: Expression },
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Expression {
-    ExprInteger { value: i32 },
-    ExprIdent { name: Identifier },
-    ExprPrefix { kind: PrefixKind, value: Box<Expression> },
-    ExprError { value: Vec<Token> },
+    ExprInteger {
+        value: i32,
+    },
+    ExprIdent {
+        name: Identifier,
+    },
+    ExprPrefix {
+        kind: PrefixKind,
+        value: Box<Expression>,
+    },
+    ExprBinary {
+        left: Box<Expression>,
+        right: Box<Expression>,
+        kind: ExprKind,
+    },
+    ExprError {
+        value: Vec<Token>,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum PrefixKind {
     Not,
     Minus,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum ExprKind {
+    Plus,
+    Minus,
+    Times,
+    Div,
+    Greater,
+    Lesser,
+    Equals,
+    Differs,
+}
+
+impl TryFrom<&Token> for ExprKind {
+    type Error = ();
+    fn try_from(value: &Token) -> Result<Self, Self::Error> {
+        match *value {
+            Token::Plus => Ok(ExprKind::Plus),
+            Token::Minus => Ok(ExprKind::Minus),
+            Token::Slash => Ok(ExprKind::Div),
+            Token::Asterisk => Ok(ExprKind::Times),
+            Token::Equals => Ok(ExprKind::Equals),
+            Token::Differs => Ok(ExprKind::Differs),
+            Token::Lt => Ok(ExprKind::Lesser),
+            Token::Gt => Ok(ExprKind::Greater),
+            _ => Err(()),
+        }
+    }
 }
 
 struct Parser {
@@ -54,7 +116,7 @@ impl From<&str> for Parser {
 }
 
 impl Parser {
-    fn next_token(&mut self) {
+    fn next_token(&mut self) -> Token {
         if self.current == Eof && self.peek == Eof {
             self.current = self.lexer.next_token();
             self.peek = self.lexer.next_token();
@@ -62,80 +124,92 @@ impl Parser {
             self.current = self.peek.clone(); // todo
             self.peek = self.lexer.next_token();
         }
+        return self.current.clone();
     }
 
     fn next_statement(&mut self) -> Node {
         self.next_token();
-        return match (self.current.clone(), self.peek.clone()) { // todo
-            (Token::Minus, _) => {
+        let res = match self.current.clone() {
+            Token::Return => {
                 self.next_token();
-                StmtExpr {
-                    value: ExprPrefix {
-                        kind: PrefixKind::Minus,
-                        value: Box::from(self.next_expression(Prefix)),
-                    }
+                StmtReturn {
+                    value: self.next_prefix(Lowest),
                 }
-            },
+            }
 
-            (Token::Bang, _) => {
-                self.next_token();
-                StmtExpr {
-                    value: ExprPrefix {
-                        kind: PrefixKind::Not,
-                        value: Box::from(self.next_expression(Prefix)),
-                    }
+            Token::Let => {
+                let ident = self.next_token();
+                let equals = self.next_token();
+                let expr = self.next_token();
+                match (ident, equals, expr) {
+                    (Token::Ident { name }, Token::Assign, _) => StmtLet {
+                        name,
+                        value: self.next_prefix(Lowest),
+                    },
+                    (ident, assign, expr) => StmtError { current: ident, peek: assign }
                 }
-            },
+            }
 
-            (Token::Ident { .. }, _) => StmtExpr { value: self.next_expression(Lowest) },
+            _ => StmtExpr { value: self.next_prefix(Lowest) }
 
-            (Token::Int { .. }, _) => StmtExpr { value: self.next_expression(Lowest) },
+        };
 
-            (Token::Return, _) => {
-                self.next_token();
-                StmtReturn { value: self.next_expression(Lowest) }
-            },
-
-            (Token::Let, Token::Ident { name }) => {
-                self.next_token();
-                self.next_token();
-                match (self.current.clone(), self.peek.clone()) {
-                    (Token::Assign, _) => {
-                        self.next_token();
-                        StmtLet { name, value: self.next_expression(Lowest) }
-                    }
-                    (current, peek) => StmtError { current, peek }
-                }
-            },
-
-            (current, peek) => StmtError { current, peek }
+        if self.peek == Token::Semicolon {
+            self.next_token();
         }
+        return res;
     }
 
-    fn next_expression(&mut self, precedence: Precedence) -> Expression {
-        return match (self.current.clone(), self.peek.clone()) { // todo
-            (Token::Ident { name }, next) => {
-                if next == Token::Semicolon {
-                    self.next_token();
+    fn next_prefix(&mut self, precedence: Precedence) -> Expression {
+        let mut left = match self.current.clone() {
+            Token::Ident { name } => Expression::ExprIdent { name },
+            Token::Int { value } => Expression::ExprInteger { value },
+            Token::Bang => {
+                self.next_token();
+                ExprPrefix {
+                    kind: Not,
+                    value: self.next_prefix(Prefix).into(),
                 }
-                Expression::ExprIdent { name }
-            },
-
-            (Token::Int { value }, next) => {
-                if next == Token::Semicolon {
-                    self.next_token();
+            }
+            Token::Minus => {
+                self.next_token();
+                ExprPrefix {
+                    kind: Minus,
+                    value: self.next_prefix(Prefix).into(),
                 }
-                Expression::ExprInteger { value }
+            }
+            _ => ExprError {
+                value: vec![self.current.clone()],
             },
+        };
 
-            _ => ExprError { value: vec!() }
+        while self.peek != Semicolon && precedence < Precedence::from(&self.peek) {
+            left = self.next_infix(left)
+        }
+
+        return left;
+    }
+
+    fn next_infix(&mut self, left: Expression) -> Expression {
+        match ExprKind::try_from(&self.peek) {
+            Ok(kind) => {
+                let precedence = Precedence::from(&self.peek);
+                self.next_token();
+                self.next_token();
+                Expression::ExprBinary {
+                    left: left.into(),
+                    right: self.next_prefix(precedence).into(),
+                    kind,
+                }
+            }
+            _ => left,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::Expression::{ExprIdent, ExprInteger, ExprPrefix};
+    use crate::parser::Expression::{ExprBinary, ExprIdent, ExprInteger, ExprPrefix};
     use crate::parser::Node::StmtLet;
 
     use super::*;
@@ -239,13 +313,17 @@ mod tests {
         assert_eq!(
             parser.next_statement(),
             StmtExpr {
-                value: ExprIdent { name: Identifier::from("name") }
+                value: ExprIdent {
+                    name: Identifier::from("name")
+                }
             },
         );
         assert_eq!(
             parser.next_statement(),
             StmtExpr {
-                value: ExprIdent { name: Identifier::from("name") }
+                value: ExprIdent {
+                    name: Identifier::from("name")
+                }
             },
         );
 
@@ -265,14 +343,183 @@ mod tests {
         assert_eq!(
             parser.next_statement(),
             StmtExpr {
-                value: ExprPrefix { kind: PrefixKind::Not , value: Box::from(ExprInteger { value: 5 }) }
+                value: ExprPrefix {
+                    kind: PrefixKind::Not,
+                    value: Box::from(ExprInteger { value: 5 })
+                }
             },
         );
         assert_eq!(
             parser.next_statement(),
             StmtExpr {
-                value: ExprPrefix { kind: PrefixKind::Minus , value: Box::from(ExprInteger { value: 15 }) }
+                value: ExprPrefix {
+                    kind: PrefixKind::Minus,
+                    value: Box::from(ExprInteger { value: 15 })
+                }
             },
+        );
+    }
+
+    #[test]
+    fn infix_operators() {
+        let input = "
+        5 + 5;
+        5 - 5;
+        5 * 5;
+        5 / 5;
+        5 > 5;
+        5 < 5;
+        5 == 5;
+        5 != 5;
+        ";
+
+        let mut parser = Parser::from(input);
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprBinary {
+                    kind: ExprKind::Plus,
+                    left: ExprInteger { value: 5 }.into(),
+                    right: ExprInteger { value: 5 }.into()
+                }
+            },
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprBinary {
+                    kind: ExprKind::Minus,
+                    left: ExprInteger { value: 5 }.into(),
+                    right: ExprInteger { value: 5 }.into()
+                }
+            },
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprBinary {
+                    kind: ExprKind::Times,
+                    left: ExprInteger { value: 5 }.into(),
+                    right: ExprInteger { value: 5 }.into()
+                }
+            },
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprBinary {
+                    kind: ExprKind::Div,
+                    left: ExprInteger { value: 5 }.into(),
+                    right: ExprInteger { value: 5 }.into()
+                }
+            },
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprBinary {
+                    kind: ExprKind::Greater,
+                    left: ExprInteger { value: 5 }.into(),
+                    right: ExprInteger { value: 5 }.into()
+                }
+            },
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprBinary {
+                    kind: ExprKind::Lesser,
+                    left: ExprInteger { value: 5 }.into(),
+                    right: ExprInteger { value: 5 }.into()
+                }
+            },
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprBinary {
+                    kind: ExprKind::Equals,
+                    left: ExprInteger { value: 5 }.into(),
+                    right: ExprInteger { value: 5 }.into()
+                }
+            },
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprBinary {
+                    kind: ExprKind::Differs,
+                    left: ExprInteger { value: 5 }.into(),
+                    right: ExprInteger { value: 5 }.into()
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn infix_precendece() {
+        let input = "
+        -a * b;
+        !-a;
+        a + b + c;
+        a + b - c;
+        a * b * c;
+        a * b / c;
+        a + b / c;
+        a + b * c + d / e - f;
+        3 + 4; -5 * 5;
+        5 > 4 == 3 < 4;
+        5 < 4 != 3 > 4;
+        3 + 4 * 5 == 3 * 1 + 4 * 5;
+        3 + 4 * 5 == 3 * 1 + 4 * 5;
+        ";
+
+        let mut parser = Parser::from(input);
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprBinary {
+                    left: ExprPrefix {
+                        kind: PrefixKind::Minus,
+                        value: ExprIdent {
+                            name: Identifier::from("a")
+                        }
+                            .into(),
+                    }
+                        .into(),
+                    kind: ExprKind::Times,
+                    right: ExprIdent {
+                        name: Identifier::from("b")
+                    }
+                        .into(),
+                }
+            }
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprPrefix {
+                    kind: PrefixKind::Not,
+                    value: ExprPrefix {
+                        kind: PrefixKind::Minus,
+                        value: ExprIdent {
+                            name: Identifier::from("a")
+                        }
+                            .into(),
+                    }
+                        .into(),
+                }
+            }
         );
     }
 }
