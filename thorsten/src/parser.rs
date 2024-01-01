@@ -47,6 +47,9 @@ pub enum Expression {
     ExprInteger {
         value: i32,
     },
+    ExprBool {
+        value: bool,
+    },
     ExprIdent {
         name: Identifier,
     },
@@ -162,6 +165,8 @@ impl Parser {
 
     fn next_prefix(&mut self, precedence: Precedence) -> Expression {
         let mut left = match self.current.clone() {
+            Token::True => Expression::ExprBool { value: true },
+            Token::False => Expression::ExprBool { value: false },
             Token::Ident { name } => Expression::ExprIdent { name },
             Token::Int { value } => Expression::ExprInteger { value },
             Token::Bang => {
@@ -209,7 +214,7 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::Expression::{ExprBinary, ExprIdent, ExprInteger, ExprPrefix};
+    use crate::parser::Expression::{ExprBinary, ExprBool, ExprIdent, ExprInteger, ExprPrefix};
     use crate::parser::Node::StmtLet;
 
     use super::*;
@@ -470,16 +475,6 @@ mod tests {
         -a * b;
         !-a;
         a + b + c;
-        a + b - c;
-        a * b * c;
-        a * b / c;
-        a + b / c;
-        a + b * c + d / e - f;
-        3 + 4; -5 * 5;
-        5 > 4 == 3 < 4;
-        5 < 4 != 3 > 4;
-        3 + 4 * 5 == 3 * 1 + 4 * 5;
-        3 + 4 * 5 == 3 * 1 + 4 * 5;
         ";
 
         let mut parser = Parser::from(input);
@@ -519,6 +514,57 @@ mod tests {
                     }
                         .into(),
                 }
+            }
+        );
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprBinary {
+                    left: Box::from(ExprBinary {
+                        kind: ExprKind::Plus,
+                        left: ExprIdent { name: Identifier::from("a") }.into(),
+                        right: ExprIdent { name: Identifier::from("b") }.into(),
+                    }),
+                    kind: ExprKind::Plus,
+                    right: Box::from(ExprIdent { name: Identifier::from("c") }
+                    ),
+                }
+            }
+        );
+    }
+
+    #[test]
+    fn boolean_literals() {
+        let input = "
+        true;
+        false;
+        let foobar = true;
+        let barfoo = false;
+        ";
+
+        let mut parser = Parser::from(input);
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr { value: ExprBool { value: true } }
+        );
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr { value: ExprBool { value: false } }
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtLet {
+                name: Identifier::from("foobar"),
+                value: ExprBool { value: true },
+            }
+        );
+        assert_eq!(
+            parser.next_statement(),
+            StmtLet {
+                name: Identifier::from("barfoo"),
+                value: ExprBool { value: false },
             }
         );
     }
