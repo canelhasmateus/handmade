@@ -74,7 +74,7 @@ pub enum Token {
     Return,
 
     Illegal { value: String },
-    Ident { value: Identifier },
+    Ident { name: Identifier },
     Int { value: i32 },
     Blank { value: String },
 }
@@ -170,7 +170,7 @@ impl Lexer {
                     "else" => Token::Else,
                     "return" => Token::Return,
                     s => Token::Ident {
-                        value: Identifier::from(s),
+                        name: Identifier::from(s),
                     },
                 },
             },
@@ -249,7 +249,7 @@ mod tests {
         assert_eq!(
             lexer.next_token(),
             Token::Ident {
-                value: Identifier::from("five")
+                name: Identifier::from("five")
             }
         );
         assert_eq!(lexer.next_token(), Token::Assign);
@@ -260,7 +260,7 @@ mod tests {
         assert_eq!(
             lexer.next_token(),
             Token::Ident {
-                value: Identifier::from("ten")
+                name: Identifier::from("ten")
             }
         );
         assert_eq!(lexer.next_token(), Token::Assign);
@@ -271,7 +271,7 @@ mod tests {
         assert_eq!(
             lexer.next_token(),
             Token::Ident {
-                value: Identifier::from("add")
+                name: Identifier::from("add")
             }
         );
         assert_eq!(lexer.next_token(), Token::Assign);
@@ -280,14 +280,14 @@ mod tests {
         assert_eq!(
             lexer.next_token(),
             Token::Ident {
-                value: Identifier::from("x")
+                name: Identifier::from("x")
             }
         );
         assert_eq!(lexer.next_token(), Token::Comma);
         assert_eq!(
             lexer.next_token(),
             Token::Ident {
-                value: Identifier::from("y")
+                name: Identifier::from("y")
             }
         );
         assert_eq!(lexer.next_token(), Token::Rparen);
@@ -297,14 +297,14 @@ mod tests {
             assert_eq!(
                 lexer.next_token(),
                 Token::Ident {
-                    value: Identifier::from("x")
+                    name: Identifier::from("x")
                 }
             );
             assert_eq!(lexer.next_token(), Token::Plus);
             assert_eq!(
                 lexer.next_token(),
                 Token::Ident {
-                    value: Identifier::from("y")
+                    name: Identifier::from("y")
                 }
             );
             assert_eq!(lexer.next_token(), Token::Semicolon);
@@ -317,28 +317,28 @@ mod tests {
         assert_eq!(
             lexer.next_token(),
             Token::Ident {
-                value: Identifier::from("result")
+                name: Identifier::from("result")
             }
         );
         assert_eq!(lexer.next_token(), Token::Assign);
         assert_eq!(
             lexer.next_token(),
             Token::Ident {
-                value: Identifier::from("add")
+                name: Identifier::from("add")
             }
         );
         assert_eq!(lexer.next_token(), Token::Lparen);
         assert_eq!(
             lexer.next_token(),
             Token::Ident {
-                value: Identifier::from("five")
+                name: Identifier::from("five")
             }
         );
         assert_eq!(lexer.next_token(), Token::Comma);
         assert_eq!(
             lexer.next_token(),
             Token::Ident {
-                value: Identifier::from("ten")
+                name: Identifier::from("ten")
             }
         );
         assert_eq!(lexer.next_token(), Token::Rparen);

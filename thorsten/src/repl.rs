@@ -18,7 +18,7 @@ impl Repl {
             self.output.flush().expect("TODO: panic message");
 
             let mut input = String::new();
-            let result = self.input.read_line(&mut input).unwrap();
+            let _ = self.input.read_line(&mut input).unwrap();
             let mut lexer = Lexer::from(input.as_ref());
 
             loop {
