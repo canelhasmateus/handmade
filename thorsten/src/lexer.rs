@@ -1,50 +1,26 @@
+use std::cmp::min;
+
 use crate::lexer::LiteralKind::{DIGIT, EQ, LETTER, OTHER, WHITESPACE};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub struct Identifier {
-    value: String,
-}
-
-impl From<&str> for Identifier {
-    fn from(value: &str) -> Self {
-        return Identifier {
-            value: value.into(),
-        };
-    }
-}
-
-#[derive(Eq, PartialEq)]
-enum LiteralKind {
-    EQ,
-    LETTER,
-    DIGIT,
-    WHITESPACE,
-    OTHER,
-}
-
-impl From<char> for LiteralKind {
-    fn from(value: char) -> Self {
-        match value {
-            ' ' => WHITESPACE,
-            '\t' => WHITESPACE,
-            '\n' => WHITESPACE,
-            '\r' => WHITESPACE,
-            '_' => LETTER,
-            '=' => EQ,
-            '!' => EQ,
-            'a'..='z' => LETTER,
-            'A'..='Z' => LETTER,
-            '0'..='9' => DIGIT,
-            _ => OTHER,
-        }
-    }
+pub struct Span {
+    start: usize,
+    end: usize,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub enum Token {
+pub struct Token {
+    kind: TokenKind,
+    span: Span,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum TokenKind {
     Eof,
+
     Bang,
     Assign,
+
     Comma,
     Semicolon,
 
@@ -73,128 +49,148 @@ pub enum Token {
     Else,
     Return,
 
-    Illegal { value: String },
-    Ident { name: Identifier },
+    Ident { name: String },
     Int { value: i32 },
+
+    Illegal { value: String },
     Blank { value: String },
 }
 
+#[derive(Eq, PartialEq)]
+enum LiteralKind {
+    EQ,
+    LETTER,
+    DIGIT,
+    WHITESPACE,
+    OTHER,
+}
+
+#[derive(Eq, PartialEq, Clone)]
 pub struct Lexer {
     input: String,
-    ch: char,
     position: usize,
-    read_position: usize,
+}
+
+impl Lexer {
+    fn next_concrete_token(&mut self) -> Token {
+        let start = min(self.position, self.input.len());
+        let rest = &self.input[start..];
+        let ch = rest.chars().nth(0).unwrap_or('\0');
+
+        let kind = match ch {
+            '*' => TokenKind::Asterisk,
+            '/' => TokenKind::Slash,
+            '+' => TokenKind::Plus,
+            '-' => TokenKind::Minus,
+
+            ',' => TokenKind::Comma,
+            ';' => TokenKind::Semicolon,
+
+            '(' => TokenKind::Lparen,
+            ')' => TokenKind::Rparen,
+
+            '{' => TokenKind::Lbrace,
+            '}' => TokenKind::Rbrace,
+            '<' => TokenKind::Lt,
+            '>' => TokenKind::Gt,
+
+            '\0' => TokenKind::Eof,
+
+            c => match literal_kind(c) {
+                DIGIT => TokenKind::Int { value: contiguous(rest, DIGIT).parse::<i32>().unwrap() },
+
+                WHITESPACE => TokenKind::Blank { value: contiguous(rest, WHITESPACE).into() },
+
+                OTHER => TokenKind::Illegal { value: contiguous(rest, OTHER).into() },
+
+                EQ => match contiguous(rest, EQ) {
+                    "=" => TokenKind::Assign,
+                    "!" => TokenKind::Bang,
+                    "==" => TokenKind::Equals,
+                    "!=" => TokenKind::Differs,
+                    value => TokenKind::Illegal { value: value.into() },
+                },
+
+                LETTER => match contiguous(rest, LETTER) {
+                    "let" => TokenKind::Let,
+                    "fn" => TokenKind::Function,
+                    "true" => TokenKind::True,
+                    "false" => TokenKind::False,
+                    "if" => TokenKind::If,
+                    "else" => TokenKind::Else,
+                    "return" => TokenKind::Return,
+                    s => TokenKind::Ident { name: s.into() },
+                },
+            },
+        };
+
+        self.position += kind.len();
+
+        return Token { kind, span: Span { start, end: self.position } };
+    }
+
+    fn next_token(&mut self) -> Token {
+        loop {
+            match self.next_concrete_token() {
+                Token { kind: TokenKind::Blank { .. }, .. } => continue,
+                token => return token,
+            };
+        }
+    }
+}
+
+impl TokenKind {
+    pub fn len(&self) -> usize {
+        return match &self {
+            TokenKind::Eof => 0,
+            TokenKind::Equals | TokenKind::Differs | TokenKind::Function | TokenKind::If => 2,
+            TokenKind::Let => 3,
+            TokenKind::True | TokenKind::Else => 4,
+            TokenKind::False => 5,
+            TokenKind::Return => 6,
+
+            TokenKind::Ident { name } => name.len(),
+            TokenKind::Int { value } => value.to_string().len(),
+            TokenKind::Illegal { value } => value.len(),
+            TokenKind::Blank { value } => value.len(),
+            _ => 1,
+        };
+    }
 }
 
 impl From<&str> for Lexer {
     fn from(value: &str) -> Self {
         return Lexer {
-            input: value.to_owned(), // todo
-            ch: '\0',
+            input: value.into(),
             position: 0,
-            read_position: 0,
         };
     }
 }
 
-impl Lexer {
-    pub fn next_token(&mut self) -> Token {
-        loop {
-            let token = self.next_real_token();
-            if let Token::Blank { value: _ } = token {
-                continue;
-            } else {
-                return token;
-            }
-        }
-    }
-    fn read_char(&mut self) -> char {
-        self.ch = if self.read_position >= self.input.len() {
-            '\0'
-        } else {
-            self.input.as_bytes()[self.read_position] as char
-        };
-
-        self.position = self.read_position;
-        self.read_position += 1;
-
-        return self.ch;
-    }
-    fn next_real_token(&mut self) -> Token {
-        return match self.read_char() {
-            '*' => Token::Asterisk,
-            '/' => Token::Slash,
-            '+' => Token::Plus,
-            '-' => Token::Minus,
-
-            ',' => Token::Comma,
-            ';' => Token::Semicolon,
-
-            '(' => Token::Lparen,
-            ')' => Token::Rparen,
-
-            '{' => Token::Lbrace,
-            '}' => Token::Rbrace,
-            '<' => Token::Lt,
-            '>' => Token::Gt,
-
-            '\0' => Token::Eof,
-
-            c => match LiteralKind::from(c) {
-                DIGIT => Token::Int {
-                    value: self.span(DIGIT).parse::<i32>().unwrap(),
-                },
-
-                WHITESPACE => Token::Blank {
-                    value: self.span(WHITESPACE).into(),
-                },
-
-                OTHER => Token::Illegal {
-                    value: self.span(OTHER).into(),
-                },
-
-                EQ => match self.span(EQ) {
-                    "=" => Token::Assign,
-                    "!" => Token::Bang,
-                    "==" => Token::Equals,
-                    "!=" => Token::Differs,
-                    s => Token::Illegal { value: s.into() },
-                },
-
-                LETTER => match self.span(LETTER) {
-                    "let" => Token::Let,
-                    "fn" => Token::Function,
-                    "true" => Token::True,
-                    "false" => Token::False,
-                    "if" => Token::If,
-                    "else" => Token::Else,
-                    "return" => Token::Return,
-                    s => Token::Ident {
-                        name: Identifier::from(s),
-                    },
-                },
-            },
-        };
-    }
-
-    fn span(&mut self, kind: LiteralKind) -> &str {
-        let initial_pos = self.position;
-        while LiteralKind::from(self.peek()) == kind {
-            self.read_char();
-        }
-
-        return &self.input[initial_pos..=self.position];
-    }
-
-    fn peek(&mut self) -> char {
-        let idx = self.position + 1;
-        if idx >= self.input.len() {
-            return '\0';
-        }
-        return self.input.as_bytes()[idx] as char;
+fn literal_kind(value: char) -> LiteralKind {
+    match value {
+        ' ' => WHITESPACE,
+        '\t' => WHITESPACE,
+        '\n' => WHITESPACE,
+        '\r' => WHITESPACE,
+        '_' => LETTER,
+        '=' => EQ,
+        '!' => EQ,
+        'a'..='z' => LETTER,
+        'A'..='Z' => LETTER,
+        '0'..='9' => DIGIT,
+        _ => OTHER,
     }
 }
 
+fn contiguous(input: &str, kind: LiteralKind) -> &str {
+    let len = input
+        .chars()
+        .take_while(|c| literal_kind(*c) == kind)
+        .count();
+
+    return &input[..len];
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,16 +200,18 @@ mod tests {
         let mut lexer = Lexer::from("a");
 
         assert_eq!(lexer.input, "a");
-        assert_eq!(lexer.ch, '\0');
         assert_eq!(lexer.position, 0);
-        assert_eq!(lexer.read_position, 0);
 
-        lexer.read_char();
+        assert_eq!(
+            lexer.next_token(),
+            Token {
+                kind: TokenKind::Ident { name: "a".into() },
+                span: Span { start: 0, end: 1 },
+            }
+        );
 
         assert_eq!(lexer.input, "a");
-        assert_eq!(lexer.ch, 'a');
-        assert_eq!(lexer.position, 0);
-        assert_eq!(lexer.read_position, 1);
+        assert_eq!(lexer.position, 1);
     }
 
     #[test]
@@ -223,15 +221,15 @@ mod tests {
         ";
         let mut lexer = Lexer::from(source);
 
-        assert_eq!(lexer.next_token(), Token::Assign);
-        assert_eq!(lexer.next_token(), Token::Plus);
-        assert_eq!(lexer.next_token(), Token::Lparen);
-        assert_eq!(lexer.next_token(), Token::Rparen);
-        assert_eq!(lexer.next_token(), Token::Lbrace);
-        assert_eq!(lexer.next_token(), Token::Rbrace);
-        assert_eq!(lexer.next_token(), Token::Comma);
-        assert_eq!(lexer.next_token(), Token::Semicolon);
-        assert_eq!(lexer.next_token(), Token::Eof);
+        assert_eq!(lexer.next_token().kind, TokenKind::Assign);
+        assert_eq!(lexer.next_token().kind, TokenKind::Plus);
+        assert_eq!(lexer.next_token().kind, TokenKind::Lparen);
+        assert_eq!(lexer.next_token().kind, TokenKind::Rparen);
+        assert_eq!(lexer.next_token().kind, TokenKind::Lbrace);
+        assert_eq!(lexer.next_token().kind, TokenKind::Rbrace);
+        assert_eq!(lexer.next_token().kind, TokenKind::Comma);
+        assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
+        assert_eq!(lexer.next_token().kind, TokenKind::Eof);
     }
 
     #[test]
@@ -245,105 +243,89 @@ mod tests {
 
         let mut lexer = Lexer::from(source);
 
-        assert_eq!(lexer.next_token(), Token::Let);
+        assert_eq!(lexer.next_token().kind, TokenKind::Let);
         assert_eq!(
-            lexer.next_token(),
-            Token::Ident {
-                name: Identifier::from("five")
+            lexer.next_token().kind,
+            TokenKind::Ident {
+                name: "five".into()
             }
         );
-        assert_eq!(lexer.next_token(), Token::Assign);
-        assert_eq!(lexer.next_token(), Token::Int { value: 5 });
-        assert_eq!(lexer.next_token(), Token::Semicolon);
+        assert_eq!(lexer.next_token().kind, TokenKind::Assign);
+        assert_eq!(lexer.next_token().kind, TokenKind::Int { value: 5 });
+        assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
 
-        assert_eq!(lexer.next_token(), Token::Let);
+        assert_eq!(lexer.next_token().kind, TokenKind::Let);
         assert_eq!(
-            lexer.next_token(),
-            Token::Ident {
-                name: Identifier::from("ten")
-            }
+            lexer.next_token().kind,
+            TokenKind::Ident { name: "ten".into() }
         );
-        assert_eq!(lexer.next_token(), Token::Assign);
-        assert_eq!(lexer.next_token(), Token::Int { value: 10 });
-        assert_eq!(lexer.next_token(), Token::Semicolon);
+        assert_eq!(lexer.next_token().kind, TokenKind::Assign);
+        assert_eq!(lexer.next_token().kind, TokenKind::Int { value: 10 });
+        assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
 
-        assert_eq!(lexer.next_token(), Token::Let);
+        assert_eq!(lexer.next_token().kind, TokenKind::Let);
         assert_eq!(
-            lexer.next_token(),
-            Token::Ident {
-                name: Identifier::from("add")
-            }
+            lexer.next_token().kind,
+            TokenKind::Ident { name: "add".into() }
         );
-        assert_eq!(lexer.next_token(), Token::Assign);
-        assert_eq!(lexer.next_token(), Token::Function);
-        assert_eq!(lexer.next_token(), Token::Lparen);
+        assert_eq!(lexer.next_token().kind, TokenKind::Assign);
+        assert_eq!(lexer.next_token().kind, TokenKind::Function);
+        assert_eq!(lexer.next_token().kind, TokenKind::Lparen);
         assert_eq!(
-            lexer.next_token(),
-            Token::Ident {
-                name: Identifier::from("x")
-            }
+            lexer.next_token().kind,
+            TokenKind::Ident { name: "x".into() }
         );
-        assert_eq!(lexer.next_token(), Token::Comma);
+        assert_eq!(lexer.next_token().kind, TokenKind::Comma);
         assert_eq!(
-            lexer.next_token(),
-            Token::Ident {
-                name: Identifier::from("y")
-            }
+            lexer.next_token().kind,
+            TokenKind::Ident { name: "y".into() }
         );
-        assert_eq!(lexer.next_token(), Token::Rparen);
+        assert_eq!(lexer.next_token().kind, TokenKind::Rparen);
         {
-            assert_eq!(lexer.next_token(), Token::Lbrace);
+            assert_eq!(lexer.next_token().kind, TokenKind::Lbrace);
 
             assert_eq!(
-                lexer.next_token(),
-                Token::Ident {
-                    name: Identifier::from("x")
-                }
+                lexer.next_token().kind,
+                TokenKind::Ident { name: "x".into() }
             );
-            assert_eq!(lexer.next_token(), Token::Plus);
+            assert_eq!(lexer.next_token().kind, TokenKind::Plus);
             assert_eq!(
-                lexer.next_token(),
-                Token::Ident {
-                    name: Identifier::from("y")
-                }
+                lexer.next_token().kind,
+                TokenKind::Ident { name: "y".into() }
             );
-            assert_eq!(lexer.next_token(), Token::Semicolon);
+            assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
 
-            assert_eq!(lexer.next_token(), Token::Rbrace);
-            assert_eq!(lexer.next_token(), Token::Semicolon);
+            assert_eq!(lexer.next_token().kind, TokenKind::Rbrace);
+            assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
         }
 
-        assert_eq!(lexer.next_token(), Token::Let);
+        assert_eq!(lexer.next_token().kind, TokenKind::Let);
         assert_eq!(
-            lexer.next_token(),
-            Token::Ident {
-                name: Identifier::from("result")
+            lexer.next_token().kind,
+            TokenKind::Ident {
+                name: "result".into()
             }
         );
-        assert_eq!(lexer.next_token(), Token::Assign);
+        assert_eq!(lexer.next_token().kind, TokenKind::Assign);
         assert_eq!(
-            lexer.next_token(),
-            Token::Ident {
-                name: Identifier::from("add")
+            lexer.next_token().kind,
+            TokenKind::Ident { name: "add".into() }
+        );
+        assert_eq!(lexer.next_token().kind, TokenKind::Lparen);
+        assert_eq!(
+            lexer.next_token().kind,
+            TokenKind::Ident {
+                name: "five".into()
             }
         );
-        assert_eq!(lexer.next_token(), Token::Lparen);
+        assert_eq!(lexer.next_token().kind, TokenKind::Comma);
         assert_eq!(
-            lexer.next_token(),
-            Token::Ident {
-                name: Identifier::from("five")
-            }
+            lexer.next_token().kind,
+            TokenKind::Ident { name: "ten".into() }
         );
-        assert_eq!(lexer.next_token(), Token::Comma);
-        assert_eq!(
-            lexer.next_token(),
-            Token::Ident {
-                name: Identifier::from("ten")
-            }
-        );
-        assert_eq!(lexer.next_token(), Token::Rparen);
-        assert_eq!(lexer.next_token(), Token::Semicolon);
-        assert_eq!(lexer.next_token(), Token::Eof);
+        assert_eq!(lexer.next_token().kind, TokenKind::Rparen);
+        assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
+        assert_eq!(lexer.next_token().kind, TokenKind::Eof);
     }
 
     #[test]
@@ -355,21 +337,21 @@ mod tests {
 
         let mut lexer = Lexer::from(source);
 
-        assert_eq!(lexer.next_token(), Token::Bang);
-        assert_eq!(lexer.next_token(), Token::Minus);
-        assert_eq!(lexer.next_token(), Token::Slash);
-        assert_eq!(lexer.next_token(), Token::Asterisk);
-        assert_eq!(lexer.next_token(), Token::Int { value: 5 });
-        assert_eq!(lexer.next_token(), Token::Semicolon);
+        assert_eq!(lexer.next_token().kind, TokenKind::Bang);
+        assert_eq!(lexer.next_token().kind, TokenKind::Minus);
+        assert_eq!(lexer.next_token().kind, TokenKind::Slash);
+        assert_eq!(lexer.next_token().kind, TokenKind::Asterisk);
+        assert_eq!(lexer.next_token().kind, TokenKind::Int { value: 5 });
+        assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
 
-        assert_eq!(lexer.next_token(), Token::Int { value: 5 });
-        assert_eq!(lexer.next_token(), Token::Lt);
-        assert_eq!(lexer.next_token(), Token::Int { value: 10 });
-        assert_eq!(lexer.next_token(), Token::Gt);
-        assert_eq!(lexer.next_token(), Token::Int { value: 5 });
-        assert_eq!(lexer.next_token(), Token::Semicolon);
+        assert_eq!(lexer.next_token().kind, TokenKind::Int { value: 5 });
+        assert_eq!(lexer.next_token().kind, TokenKind::Lt);
+        assert_eq!(lexer.next_token().kind, TokenKind::Int { value: 10 });
+        assert_eq!(lexer.next_token().kind, TokenKind::Gt);
+        assert_eq!(lexer.next_token().kind, TokenKind::Int { value: 5 });
+        assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
 
-        assert_eq!(lexer.next_token(), Token::Eof);
+        assert_eq!(lexer.next_token().kind, TokenKind::Eof);
     }
 
     #[test]
@@ -384,28 +366,28 @@ mod tests {
 
         let mut lexer = Lexer::from(source);
 
-        assert_eq!(lexer.next_token(), Token::If);
-        assert_eq!(lexer.next_token(), Token::Lparen);
-        assert_eq!(lexer.next_token(), Token::Int { value: 5 });
-        assert_eq!(lexer.next_token(), Token::Lt);
-        assert_eq!(lexer.next_token(), Token::Int { value: 10 });
-        assert_eq!(lexer.next_token(), Token::Rparen);
-        assert_eq!(lexer.next_token(), Token::Lbrace);
+        assert_eq!(lexer.next_token().kind, TokenKind::If);
+        assert_eq!(lexer.next_token().kind, TokenKind::Lparen);
+        assert_eq!(lexer.next_token().kind, TokenKind::Int { value: 5 });
+        assert_eq!(lexer.next_token().kind, TokenKind::Lt);
+        assert_eq!(lexer.next_token().kind, TokenKind::Int { value: 10 });
+        assert_eq!(lexer.next_token().kind, TokenKind::Rparen);
+        assert_eq!(lexer.next_token().kind, TokenKind::Lbrace);
         {
-            assert_eq!(lexer.next_token(), Token::Return);
-            assert_eq!(lexer.next_token(), Token::True);
-            assert_eq!(lexer.next_token(), Token::Semicolon);
+            assert_eq!(lexer.next_token().kind, TokenKind::Return);
+            assert_eq!(lexer.next_token().kind, TokenKind::True);
+            assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
         }
-        assert_eq!(lexer.next_token(), Token::Rbrace);
-        assert_eq!(lexer.next_token(), Token::Else);
-        assert_eq!(lexer.next_token(), Token::Lbrace);
+        assert_eq!(lexer.next_token().kind, TokenKind::Rbrace);
+        assert_eq!(lexer.next_token().kind, TokenKind::Else);
+        assert_eq!(lexer.next_token().kind, TokenKind::Lbrace);
         {
-            assert_eq!(lexer.next_token(), Token::Return);
-            assert_eq!(lexer.next_token(), Token::False);
-            assert_eq!(lexer.next_token(), Token::Semicolon);
+            assert_eq!(lexer.next_token().kind, TokenKind::Return);
+            assert_eq!(lexer.next_token().kind, TokenKind::False);
+            assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
         }
-        assert_eq!(lexer.next_token(), Token::Rbrace);
-        assert_eq!(lexer.next_token(), Token::Eof);
+        assert_eq!(lexer.next_token().kind, TokenKind::Rbrace);
+        assert_eq!(lexer.next_token().kind, TokenKind::Eof);
     }
 
     #[test]
@@ -417,16 +399,16 @@ mod tests {
 
         let mut lexer = Lexer::from(source);
 
-        assert_eq!(lexer.next_token(), Token::Int { value: 10 });
-        assert_eq!(lexer.next_token(), Token::Equals);
-        assert_eq!(lexer.next_token(), Token::Int { value: 10 });
-        assert_eq!(lexer.next_token(), Token::Semicolon);
+        assert_eq!(lexer.next_token().kind, TokenKind::Int { value: 10 });
+        assert_eq!(lexer.next_token().kind, TokenKind::Equals);
+        assert_eq!(lexer.next_token().kind, TokenKind::Int { value: 10 });
+        assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
 
-        assert_eq!(lexer.next_token(), Token::Int { value: 10 });
-        assert_eq!(lexer.next_token(), Token::Differs);
-        assert_eq!(lexer.next_token(), Token::Int { value: 9 });
-        assert_eq!(lexer.next_token(), Token::Semicolon);
+        assert_eq!(lexer.next_token().kind, TokenKind::Int { value: 10 });
+        assert_eq!(lexer.next_token().kind, TokenKind::Differs);
+        assert_eq!(lexer.next_token().kind, TokenKind::Int { value: 9 });
+        assert_eq!(lexer.next_token().kind, TokenKind::Semicolon);
 
-        assert_eq!(lexer.next_token(), Token::Eof);
+        assert_eq!(lexer.next_token().kind, TokenKind::Eof);
     }
 }
