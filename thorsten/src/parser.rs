@@ -169,6 +169,16 @@ impl Parser {
             Token::False => Expression::ExprBool { value: false },
             Token::Ident { name } => Expression::ExprIdent { name },
             Token::Int { value } => Expression::ExprInteger { value },
+            Token::Lparen => {
+                self.next_token();
+                let expression = self.next_prefix(Lowest);
+                let rp = self.next_token();
+                match (expression, rp) {
+                    (exp, Token::Rparen) => exp,
+                    (exp, tk) => ExprError { value: vec![tk.clone()] }
+                }
+            }
+
             Token::Bang => {
                 self.next_token();
                 ExprPrefix {
@@ -176,6 +186,7 @@ impl Parser {
                     value: self.next_prefix(Prefix).into(),
                 }
             }
+
             Token::Minus => {
                 self.next_token();
                 ExprPrefix {
@@ -185,7 +196,7 @@ impl Parser {
             }
             _ => ExprError {
                 value: vec![self.current.clone()],
-            },
+            }
         };
 
         while self.peek != Semicolon && precedence < Precedence::from(&self.peek) {
@@ -470,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn infix_precendece() {
+    fn infix_precedence() {
         let input = "
         -a * b;
         !-a;
@@ -565,6 +576,100 @@ mod tests {
             StmtLet {
                 name: Identifier::from("barfoo"),
                 value: ExprBool { value: false },
+            }
+        );
+    }
+
+    #[test]
+    fn grouped_expressions() {
+        let input = "
+        1 + (2 + 3) + 4;
+        (5 + 5) * 2;
+        2 / (5 + 5);
+        -(5 + 5);
+        !(true == true);
+        ";
+
+        let mut parser = Parser::from(input);
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprBinary {
+                    kind: ExprKind::Plus,
+                    right: ExprInteger { value: 4 }.into(),
+                    left: Box::from(ExprBinary {
+                        kind: ExprKind::Plus,
+                        left: ExprInteger { value: 1 }.into(),
+                        right: Box::from(ExprBinary {
+                            kind: ExprKind::Plus,
+                            left: Box::from(ExprInteger { value: 2 }),
+                            right: Box::from(ExprInteger { value: 3 }),
+                        }),
+                    }),
+
+                }
+            }
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprBinary {
+                    kind: ExprKind::Times,
+                    right: ExprInteger { value: 2 }.into(),
+                    left: Box::from(ExprBinary {
+                        kind: ExprKind::Plus,
+                        left: ExprInteger { value: 5 }.into(),
+                        right: ExprInteger { value: 5 }.into(),
+                    }),
+
+                }
+            }
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprBinary {
+                    kind: ExprKind::Div,
+                    left: ExprInteger { value: 2 }.into(),
+                    right: Box::from(ExprBinary {
+                        kind: ExprKind::Plus,
+                        left: ExprInteger { value: 5 }.into(),
+                        right: ExprInteger { value: 5 }.into(),
+                    }),
+
+                }
+            }
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprPrefix {
+                    kind: PrefixKind::Minus,
+                    value: Box::from(ExprBinary {
+                        kind: ExprKind::Plus,
+                        left: ExprInteger { value: 5 }.into(),
+                        right: ExprInteger { value: 5 }.into(),
+                    }),
+
+                }
+            }
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            StmtExpr {
+                value: ExprPrefix {
+                    kind: PrefixKind::Not,
+                    value: Box::from(ExprBinary {
+                        kind: ExprKind::Equals,
+                        left: ExprBool { value: true }.into(),
+                        right: ExprBool { value: true }.into(),
+                    }),
+                }
             }
         );
     }
