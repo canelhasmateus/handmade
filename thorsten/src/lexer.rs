@@ -4,14 +4,14 @@ use crate::lexer::LiteralKind::{DIGIT, EQ, LETTER, OTHER, WHITESPACE};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Span {
-    start: usize,
-    end: usize,
+    pub start: usize,
+    pub end: usize,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Token {
-    kind: TokenKind,
-    span: Span,
+    pub kind: TokenKind,
+    pub span: Span,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -72,7 +72,7 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    fn next_concrete_token(&mut self) -> Token {
+    pub fn next_concrete_token(&mut self) -> Token {
         let start = min(self.position, self.input.len());
         let rest = &self.input[start..];
         let ch = rest.chars().nth(0).unwrap_or('\0');
@@ -129,7 +129,7 @@ impl Lexer {
         return Token { kind, span: Span { start, end: self.position } };
     }
 
-    fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> Token {
         loop {
             match self.next_concrete_token() {
                 Token { kind: TokenKind::Blank { .. }, .. } => continue,
