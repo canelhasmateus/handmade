@@ -1,42 +1,43 @@
+
 use crate::lexer::{Lexer, Span, Token, TokenKind};
 use crate::lexer::TokenKind::Semicolon;
 use crate::parser::ExpressionPrecedence::{Equals, LesserGreater, Lowest, Prefix, Product, Sum};
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Statement {
-    pub kind: StatementKind,
+pub struct Statement<'a> {
+    pub kind: StatementKind<'a>,
     pub span: Span,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Expression {
-    pub kind: ExpressionKind,
+pub struct Expression<'a > {
+    pub kind: ExpressionKind<'a >,
     pub span: Span,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum StatementKind {
-    Let { name: String, expr: Expression },
-    Return { expr: Expression },
-    Expr { expr: Expression },
-    Illegal { expr: Expression },
+pub enum StatementKind<'a > {
+    Let { name: &'a str, expr: Expression<'a> },
+    Return { expr: Expression<'a> },
+    Expr { expr: Expression<'a> },
+    Illegal { expr: Expression<'a> },
 }
 
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum ExpressionKind {
+pub enum ExpressionKind<'a > {
     LiteralInteger { value: i32 },
     LiteralBoolean { value: bool },
-    Identifier { name: String },
-    Unary { value: UnaryExpression },
-    Binary { value: BinaryExpression },
-    Illegal { value: String },
+    Identifier { name: &'a str },
+    Unary { value: UnaryExpression<'a> },
+    Binary { value: BinaryExpression<'a> },
+    Illegal { value: &'a str },
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct UnaryExpression {
+pub struct UnaryExpression<'a> {
     kind: UnaryExpressionKind,
-    expr: Box<Expression>,
+    expr: Box<Expression<'a>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -46,10 +47,10 @@ pub enum UnaryExpressionKind {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct BinaryExpression {
+pub struct BinaryExpression<'a> {
     kind: BinaryExpressionKind,
-    left: Box<Expression>,
-    right: Box<Expression>,
+    left: Box<Expression<'a>>,
+    right: Box<Expression<'a>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -65,14 +66,14 @@ pub enum BinaryExpressionKind {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ConditionalExpression {
-    condition: Box<Expression>,
-    positive: Box<Expression>,
-    negative: Option<Box<Expression>>,
+pub struct ConditionalExpression<'a> {
+    condition: Box<Expression<'a>>,
+    positive: Box<Expression<'a>>,
+    negative: Option<Box<Expression<'a>>>,
 }
 
 #[derive(Clone, Copy, PartialOrd, PartialEq)]
-enum ExpressionPrecedence {
+pub enum ExpressionPrecedence {
     Lowest,
     Equals,
     LesserGreater,
@@ -81,12 +82,12 @@ enum ExpressionPrecedence {
     Prefix,
 }
 
-pub struct Parser {
-    lexer: Lexer,
+pub struct Parser<'a> {
+    lexer: Lexer<'a>,
 }
 
-impl Parser {
-    fn statement_after(&self, span: &Span) -> Statement {
+impl Parser<'_> {
+    pub fn statement_after(&self, span: &Span) -> Statement {
         let current = self.lexer.semantic_token_after(span);
         let mut statement = match current.kind {
             TokenKind::Return => {
@@ -123,14 +124,14 @@ impl Parser {
         };
 
         let mut after = self.lexer.semantic_token_after(&statement.span);
-        while matches!(after.kind , Semicolon) {
+        while matches!(after.kind, Semicolon) {
             statement.span.end += after.len();
             after = self.lexer.semantic_token_after(&after.span);
         }
 
         return statement;
     }
-    fn expression_after(&self, start: &Span, precedence: ExpressionPrecedence) -> Expression {
+    pub fn expression_after(&self, start: &Span, precedence: ExpressionPrecedence) -> Expression {
         let current = self.lexer.semantic_token_after(start);
         let mut left = match current.kind {
             TokenKind::True => Expression {
@@ -152,23 +153,6 @@ impl Parser {
                 kind: ExpressionKind::LiteralInteger { value },
             },
 
-            TokenKind::Lparen => {
-                let mut expr = self.expression_after(&current.span, Lowest);
-                let right_par = self.lexer.semantic_token_after(&expr.span);
-                expr.span.start = current.span.start;
-                expr.span.end = right_par.span.end;
-                match right_par.kind {
-                    TokenKind::Rparen => expr,
-                    _ => {
-                        let value = self.lexer.slice(&expr.span).into();
-                        Expression {
-                            span: expr.span,
-                            kind: ExpressionKind::Illegal { value },
-                        }
-                    }
-                }
-            }
-
             TokenKind::Bang | TokenKind::Minus => {
                 let expr = self.expression_after(&current.span, Prefix);
                 Expression {
@@ -180,16 +164,25 @@ impl Parser {
                         }
                     },
                 }
-            }
+            },
 
-            _ => {
-                let next = &current;
-                let span = Span { start: current.span.start - next.len(), end: next.span.end };
-                let s = self.lexer.slice(&span);
-                Expression {
-                    span,
-                    kind: ExpressionKind::Illegal { value: s.into() },
+            TokenKind::Lparen => {
+                let mut expr = self.expression_after(&current.span, Lowest);
+                let right_par = self.lexer.semantic_token_after(&expr.span);
+                expr.span.start = current.span.start;
+                expr.span.end = right_par.span.end;
+                match right_par.kind {
+                    TokenKind::Rparen => expr,
+                    _ => Expression {
+                        span: expr.span,
+                        kind: ExpressionKind::Illegal { value: self.lexer.slice(&expr.span).into() },
+                    }
                 }
+            },
+
+            _ => Expression { // todo: read until Semicolon
+                span: current.span,
+                kind: ExpressionKind::Illegal { value: self.lexer.slice(&current.span).into() },
             }
         };
 
@@ -199,39 +192,40 @@ impl Parser {
             if precedence >= next_precedence {
                 return left;
             }
-            if let Ok(kind) = BinaryExpressionKind::try_from(&next_token) {
-                let expr = self.expression_after(&next_token.span, next_precedence);
-                let span = Span { start: left.span.start, end: expr.span.end };
-                left = Expression {
-                    span,
-                    kind: ExpressionKind::Binary {
-                        value: BinaryExpression {
-                            kind,
-                            left: Box::from(left),
-                            right: Box::from(expr),
-                        }
-                    },
+            match BinaryExpressionKind::try_from(&next_token) {
+                Err(()) => return left,
+                Ok(op) => {
+                    let expr = self.expression_after(&next_token.span, next_precedence);
+                    let span = Span { start: left.span.start, end: expr.span.end };
+                    left = Expression {
+                        span,
+                        kind: ExpressionKind::Binary {
+                            value: BinaryExpression {
+                                kind: op,
+                                left: Box::from(left),
+                                right: Box::from(expr),
+                            }
+                        },
+                    }
                 }
-            } else {
-                return left;
             }
         }
     }
 
-    pub fn next_statement(&mut self) -> Statement {
-        let statement = self.statement_after(&Span { start: 0, end: self.lexer.position });
-        self.lexer.move_to(&statement.span);
+    pub fn next_statement(&self) -> Statement {
+        let statement = self.statement_after(&Span { start: 0, end: self.lexer.position.take() });
+        self.lexer.move_to( &statement.span);
         return statement;
     }
 }
 
-impl From<&str> for Parser {
-    fn from(value: &str) -> Self {
+impl <'a> From<&'a str> for Parser<'a> {
+    fn from(value: &'a str) -> Self {
         return Parser { lexer: Lexer::from(value) };
     }
 }
 
-impl TryFrom<&Token> for UnaryExpressionKind {
+impl TryFrom<&Token<'_>> for UnaryExpressionKind {
     type Error = ();
 
     fn try_from(value: &Token) -> Result<Self, Self::Error> {
@@ -243,7 +237,7 @@ impl TryFrom<&Token> for UnaryExpressionKind {
     }
 }
 
-impl From<&Token> for ExpressionPrecedence {
+impl From<&Token<'_>> for ExpressionPrecedence {
     fn from(value: &Token) -> Self {
         match value.kind {
             TokenKind::Plus | TokenKind::Minus => Sum,
@@ -255,7 +249,7 @@ impl From<&Token> for ExpressionPrecedence {
     }
 }
 
-impl TryFrom<&Token> for BinaryExpressionKind {
+impl TryFrom<&Token<'_>> for BinaryExpressionKind {
     type Error = ();
 
     fn try_from(value: &Token) -> Result<Self, Self::Error> {
@@ -273,15 +267,16 @@ impl TryFrom<&Token> for BinaryExpressionKind {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    use super::*;
 
+    use super::*;
     #[test]
     fn parser_initialization() {
-        let mut parser = Parser::from("1 + 2");
-        assert_eq!(parser.lexer.position, 0);
+        let parser = Parser::from("1 + 2");
+        assert_eq!(parser.lexer.position.take(), 0);
         parser.next_statement();
-        assert_eq!(parser.lexer.position, 5);
+        assert_eq!(parser.lexer.position.take(), 5);
     }
 
     #[test]
@@ -292,7 +287,7 @@ mod tests {
         let foobar = 838383;
         ";
 
-        let mut parser = Parser::from(input);
+        let parser = Parser::from(input);
 
         assert_eq!(&input[9..19], "let x = 5;");
         assert_eq!(&input[17..18], "5");
@@ -352,7 +347,7 @@ mod tests {
         return 993322;
         ";
 
-        let mut parser = Parser::from(input);
+        let parser = Parser::from(input);
 
 
         assert_eq!(&input[9..18], "return 5;");
@@ -412,7 +407,7 @@ mod tests {
         -15;
         ";
 
-        let mut parser = Parser::from(input);
+        let parser = Parser::from(input);
 
         assert_eq!(&input[9..14], "name;");
         assert_eq!(&input[9..13], "name");
@@ -536,7 +531,7 @@ mod tests {
         5 != 5;
         ";
 
-        let mut parser = Parser::from(input);
+        let parser = Parser::from(input);
 
         assert_eq!(&input[9..15], "5 + 5;");
         assert_eq!(&input[9..14], "5 + 5");
@@ -779,7 +774,7 @@ mod tests {
         a + b + c;
         ";
 
-        let mut parser = Parser::from(input);
+        let parser = Parser::from(input);
 
         assert_eq!(&input[9..16], "-a * b;");
         assert_eq!(&input[9..15], "-a * b");
@@ -905,7 +900,7 @@ mod tests {
         let barfoo = false;
         ";
 
-        let mut parser = Parser::from(input);
+        let parser = Parser::from(input);
 
         assert_eq!(&input[9..14], "true;");
         assert_eq!(&input[9..13], "true");
@@ -990,7 +985,7 @@ mod tests {
         !(true == true);
         ";
 
-        let mut parser = Parser::from(input);
+        let parser = Parser::from(input);
 
         assert_eq!(&input[9..25], "1 + (2 + 3) + 4;");
         assert_eq!(&input[9..24], "1 + (2 + 3) + 4");

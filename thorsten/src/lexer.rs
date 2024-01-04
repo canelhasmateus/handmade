@@ -1,21 +1,22 @@
+use std::cell::RefCell;
 use std::cmp::min;
 
 use crate::lexer::LiteralKind::{DIGIT, EQ, LETTER, OTHER, WHITESPACE};
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct Token {
-    pub kind: TokenKind,
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub struct Token<'a > {
+    pub kind: TokenKind<'a >,
     pub span: Span,
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum TokenKind {
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+pub enum TokenKind<'a > {
     Eof,
 
     Bang,
@@ -49,20 +50,20 @@ pub enum TokenKind {
     Else,
     Return,
 
-    Ident { name: String },
+    Ident { name: &'a str },
     Int { value: i32 },
 
-    Illegal { value: String },
-    Blank { value: String },
+    Illegal { value: &'a str },
+    Blank { value: &'a str },
 }
 
 #[derive(Eq, PartialEq)]
-pub struct Lexer {
-    input: String,
-    pub position: usize,
+pub struct Lexer<'a> {
+    input: &'a str,
+    pub position: RefCell<usize>,
 }
 
-impl Lexer {
+impl Lexer<'_> {
     pub fn slice(&self, span: &Span) -> &str {
         return &self.input[span.start..span.end];
     }
@@ -121,21 +122,23 @@ impl Lexer {
     }
     pub fn semantic_token_after(&self, span: &Span) -> Token {
         let mut current = self.concrete_token_after(span);
-        while matches!( current.kind, TokenKind::Blank { .. } ) {
+        while matches!(current.kind, TokenKind::Blank { .. }) {
             current = self.concrete_token_after(&current.span);
         }
         return current
     }
 
-    pub fn move_to(&mut self, span: &Span) {
-        self.position = span.end;
+    pub fn move_to(&self, span: &Span) {
+        self.position.replace(span.end);
     }
-    pub fn next_concrete(&mut self) -> Token {
-        let token = self.concrete_token_after(&Span { start: 0, end: self.position });
+
+    pub fn next_concrete(&self) -> Token {
+        let token = self.concrete_token_after(&Span { start: 0, end: self.position.take() });
         self.move_to(&token.span);
         return token;
     }
-    pub fn next_semantic(&mut self) -> Token {
+
+    pub fn next_semantic(&self) -> Token {
         loop {
             match self.next_concrete() {
                 Token { kind: TokenKind::Blank { .. }, .. } => continue,
@@ -145,13 +148,13 @@ impl Lexer {
     }
 }
 
-impl Token {
+impl Token<'_> {
     pub fn len(&self) -> usize {
         return self.kind.len();
     }
 }
 
-impl TokenKind {
+impl TokenKind<'_> {
     pub fn len(&self) -> usize {
         return match &self {
             TokenKind::Eof => 0,
@@ -170,11 +173,11 @@ impl TokenKind {
     }
 }
 
-impl From<&str> for Lexer {
-    fn from(value: &str) -> Self {
+impl <'a> From<&'a str> for Lexer<'a> {
+    fn from(value: &'a str) -> Self {
         return Lexer {
-            input: value.into(),
-            position: 0,
+            input: value,
+            position: 0.into(),
         };
     }
 }
@@ -215,10 +218,10 @@ mod tests {
 
     #[test]
     fn lexer_initialization() {
-        let mut lexer = Lexer::from("a");
+        let lexer = Lexer::from("a");
 
         assert_eq!(lexer.input, "a");
-        assert_eq!(lexer.position, 0);
+        assert_eq!(lexer.position.take(), 0);
 
         assert_eq!(
             lexer.next_semantic(),
@@ -229,7 +232,7 @@ mod tests {
         );
 
         assert_eq!(lexer.input, "a");
-        assert_eq!(lexer.position, 1);
+        assert_eq!(lexer.position.take(), 1);
     }
 
     #[test]
@@ -237,7 +240,7 @@ mod tests {
         let source = "
         =+(){},;
         ";
-        let mut lexer = Lexer::from(source);
+        let lexer = Lexer::from(source);
 
         assert_eq!(lexer.next_semantic().kind, TokenKind::Assign);
         assert_eq!(lexer.next_semantic().kind, TokenKind::Plus);
@@ -259,7 +262,7 @@ mod tests {
         let result = add(five, ten);
         ";
 
-        let mut lexer = Lexer::from(source);
+        let lexer = Lexer::from(source);
 
         assert_eq!(lexer.next_semantic().kind, TokenKind::Let);
         assert_eq!(
@@ -353,7 +356,7 @@ mod tests {
         5 < 10 > 5;
         ";
 
-        let mut lexer = Lexer::from(source);
+        let lexer = Lexer::from(source);
 
         assert_eq!(lexer.next_semantic().kind, TokenKind::Bang);
         assert_eq!(lexer.next_semantic().kind, TokenKind::Minus);
@@ -382,7 +385,7 @@ mod tests {
         }
         ";
 
-        let mut lexer = Lexer::from(source);
+        let lexer = Lexer::from(source);
 
         assert_eq!(lexer.next_semantic().kind, TokenKind::If);
         assert_eq!(lexer.next_semantic().kind, TokenKind::Lparen);
@@ -415,7 +418,7 @@ mod tests {
         10 != 9;
         ";
 
-        let mut lexer = Lexer::from(source);
+        let lexer = Lexer::from(source);
 
         assert_eq!(lexer.next_semantic().kind, TokenKind::Int { value: 10 });
         assert_eq!(lexer.next_semantic().kind, TokenKind::Equals);
