@@ -81,7 +81,7 @@ enum ExpressionPrecedence {
     Prefix,
 }
 
-struct Parser {
+pub struct Parser {
     lexer: Lexer,
 }
 
@@ -218,7 +218,7 @@ impl Parser {
         }
     }
 
-    fn next_statement(&mut self) -> Statement {
+    pub fn next_statement(&mut self) -> Statement {
         let statement = self.statement_after(&Span { start: 0, end: self.lexer.position });
         self.lexer.move_to(&statement.span);
         return statement;
