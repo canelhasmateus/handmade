@@ -1,6 +1,11 @@
+use ExpressionKind::{
+    Binary, Identifier, IllegalExpression, LiteralBoolean, LiteralInteger, Unary,
+};
+use StatementKind::{IllegalStatement, ReturnStmt};
+use TokenKind::{Assign, Bang, False, Ident, Int, Let, Lparen, Minus, Return, Rparen, True};
 
-use crate::lexer::{Lexer, Span, Token, TokenKind};
 use crate::lexer::TokenKind::Semicolon;
+use crate::lexer::{Lexer, Span, Token, TokenKind};
 use crate::parser::ExpressionPrecedence::{Equals, LesserGreater, Lowest, Prefix, Product, Sum};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -10,51 +15,52 @@ pub struct Statement<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Expression<'a > {
-    pub kind: ExpressionKind<'a >,
+pub struct Expression<'a> {
+    pub kind: ExpressionKind<'a>,
     pub span: Span,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum StatementKind<'a > {
-    Let { name: &'a str, expr: Expression<'a> },
-    Return { expr: Expression<'a> },
-    Expr { expr: Expression<'a> },
-    Illegal { expr: Expression<'a> },
-}
-
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum ExpressionKind<'a > {
-    LiteralInteger { value: i32 },
-    LiteralBoolean { value: bool },
-    Identifier { name: &'a str },
-    Unary { value: UnaryExpression<'a> },
-    Binary { value: BinaryExpression<'a> },
-    Illegal { value: &'a str },
+pub enum StatementKind<'a> {
+    LetStmt { name: &'a str, expr: Expression<'a> },
+    ReturnStmt { expr: Expression<'a> },
+    ExprStmt { expr: Expression<'a> },
+    IllegalStatement { expr: Expression<'a> },
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct UnaryExpression<'a> {
-    kind: UnaryExpressionKind,
-    expr: Box<Expression<'a>>,
+pub enum ExpressionKind<'a> {
+    LiteralInteger {
+        value: i32,
+    },
+    LiteralBoolean {
+        value: bool,
+    },
+    Identifier {
+        name: &'a str,
+    },
+    Unary {
+        op: UnaryOp,
+        expr: Box<Expression<'a>>,
+    },
+    Binary {
+        op: BinaryOp,
+        left: Box<Expression<'a>>,
+        right: Box<Expression<'a>>,
+    },
+    IllegalExpression {
+        value: &'a str,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum UnaryExpressionKind {
+pub enum UnaryOp {
     Not,
     Minus,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct BinaryExpression<'a> {
-    kind: BinaryExpressionKind,
-    left: Box<Expression<'a>>,
-    right: Box<Expression<'a>>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum BinaryExpressionKind {
+pub enum BinaryOp {
     Plus,
     Minus,
     Times,
@@ -90,27 +96,27 @@ impl Parser<'_> {
     pub fn statement_after(&self, span: &Span) -> Statement {
         let current = self.lexer.semantic_token_after(span);
         let mut statement = match current.kind {
-            TokenKind::Return => {
+            Return => {
                 let expr = self.expression_after(&current.span, Lowest);
                 Statement {
                     span: Span { start: current.span.start, end: expr.span.end },
-                    kind: StatementKind::Return { expr },
+                    kind: ReturnStmt { expr },
                 }
             }
 
-            TokenKind::Let => {
+            Let => {
                 let ident = self.lexer.semantic_token_after(&current.span);
                 let equals = self.lexer.semantic_token_after(&ident.span);
                 let expr = self.expression_after(&equals.span, Lowest);
                 match (ident.kind, equals.kind) {
-                    (TokenKind::Ident { name }, TokenKind::Assign) => Statement {
+                    (Ident { name }, Assign) => Statement {
                         span: Span { start: current.span.start, end: expr.span.end },
-                        kind: StatementKind::Let { name, expr },
+                        kind: StatementKind::LetStmt { name, expr },
                     },
                     _ => Statement {
                         span: Span { start: current.span.start, end: expr.span.end },
-                        kind: StatementKind::Illegal { expr },
-                    }
+                        kind: IllegalStatement { expr },
+                    },
                 }
             }
 
@@ -118,7 +124,7 @@ impl Parser<'_> {
                 let expr = self.expression_after(&span, Lowest);
                 Statement {
                     span: Span { start: current.span.start, end: expr.span.end },
-                    kind: StatementKind::Expr { expr },
+                    kind: StatementKind::ExprStmt { expr },
                 }
             }
         };
@@ -134,56 +140,40 @@ impl Parser<'_> {
     pub fn expression_after(&self, start: &Span, precedence: ExpressionPrecedence) -> Expression {
         let current = self.lexer.semantic_token_after(start);
         let mut left = match current.kind {
-            TokenKind::True => Expression {
-                span: current.span,
-                kind: ExpressionKind::LiteralBoolean { value: true },
-            },
-            TokenKind::False => Expression {
-                span: current.span,
-                kind: ExpressionKind::LiteralBoolean { value: false },
-            },
+            True => Expression { span: current.span, kind: LiteralBoolean { value: true } },
+            False => Expression { span: current.span, kind: LiteralBoolean { value: false } },
 
-            TokenKind::Ident { name } => Expression {
-                span: current.span,
-                kind: ExpressionKind::Identifier { name },
-            },
+            Int { value } => Expression { span: current.span, kind: LiteralInteger { value } },
 
-            TokenKind::Int { value } => Expression {
-                span: current.span,
-                kind: ExpressionKind::LiteralInteger { value },
-            },
+            Ident { name } => Expression { span: current.span, kind: Identifier { name } },
 
-            TokenKind::Bang | TokenKind::Minus => {
+            Bang | Minus => {
                 let expr = self.expression_after(&current.span, Prefix);
                 Expression {
                     span: Span { start: current.span.start, end: expr.span.end },
-                    kind: ExpressionKind::Unary {
-                        value: UnaryExpression {
-                            kind: UnaryExpressionKind::try_from(&current).unwrap(),
-                            expr: expr.into(),
-                        }
-                    },
+                    kind: Unary { op: UnaryOp::try_from(&current).unwrap(), expr: expr.into() },
                 }
-            },
+            }
 
-            TokenKind::Lparen => {
+            Lparen => {
                 let mut expr = self.expression_after(&current.span, Lowest);
                 let right_par = self.lexer.semantic_token_after(&expr.span);
                 expr.span.start = current.span.start;
                 expr.span.end = right_par.span.end;
                 match right_par.kind {
-                    TokenKind::Rparen => expr,
+                    Rparen => expr,
                     _ => Expression {
                         span: expr.span,
-                        kind: ExpressionKind::Illegal { value: self.lexer.slice(&expr.span).into() },
-                    }
+                        kind: IllegalExpression { value: self.lexer.slice(&expr.span).into() },
+                    },
                 }
-            },
-
-            _ => Expression { // todo: read until Semicolon
-                span: current.span,
-                kind: ExpressionKind::Illegal { value: self.lexer.slice(&current.span).into() },
             }
+
+            _ => Expression {
+                // todo: read until Semicolon
+                span: current.span,
+                kind: IllegalExpression { value: self.lexer.slice(&current.span).into() },
+            },
         };
 
         loop {
@@ -192,20 +182,13 @@ impl Parser<'_> {
             if precedence >= next_precedence {
                 return left;
             }
-            match BinaryExpressionKind::try_from(&next_token) {
+            match BinaryOp::try_from(&next_token) {
                 Err(()) => return left,
-                Ok(op) => {
+                Ok(kind) => {
                     let expr = self.expression_after(&next_token.span, next_precedence);
-                    let span = Span { start: left.span.start, end: expr.span.end };
                     left = Expression {
-                        span,
-                        kind: ExpressionKind::Binary {
-                            value: BinaryExpression {
-                                kind: op,
-                                left: Box::from(left),
-                                right: Box::from(expr),
-                            }
-                        },
+                        span: Span { start: left.span.start, end: expr.span.end },
+                        kind: Binary { op: kind, left: Box::from(left), right: Box::from(expr) },
                     }
                 }
             }
@@ -214,25 +197,25 @@ impl Parser<'_> {
 
     pub fn next_statement(&self) -> Statement {
         let statement = self.statement_after(&Span { start: 0, end: self.lexer.position.take() });
-        self.lexer.move_to( &statement.span);
+        self.lexer.move_to(&statement.span);
         return statement;
     }
 }
 
-impl <'a> From<&'a str> for Parser<'a> {
+impl<'a> From<&'a str> for Parser<'a> {
     fn from(value: &'a str) -> Self {
         return Parser { lexer: Lexer::from(value) };
     }
 }
 
-impl TryFrom<&Token<'_>> for UnaryExpressionKind {
+impl TryFrom<&Token<'_>> for UnaryOp {
     type Error = ();
 
     fn try_from(value: &Token) -> Result<Self, Self::Error> {
         match value.kind {
-            TokenKind::Bang => Ok(UnaryExpressionKind::Not),
-            TokenKind::Minus => Ok(UnaryExpressionKind::Minus),
-            _ => Err(())
+            Bang => Ok(UnaryOp::Not),
+            Minus => Ok(UnaryOp::Minus),
+            _ => Err(()),
         }
     }
 }
@@ -240,37 +223,39 @@ impl TryFrom<&Token<'_>> for UnaryExpressionKind {
 impl From<&Token<'_>> for ExpressionPrecedence {
     fn from(value: &Token) -> Self {
         match value.kind {
-            TokenKind::Plus | TokenKind::Minus => Sum,
+            TokenKind::Plus | Minus => Sum,
             TokenKind::Asterisk | TokenKind::Slash => Product,
             TokenKind::Lt | TokenKind::Gt => LesserGreater,
             TokenKind::Equals | TokenKind::Differs => Equals,
-            _ => Lowest
+            _ => Lowest,
         }
     }
 }
 
-impl TryFrom<&Token<'_>> for BinaryExpressionKind {
+impl TryFrom<&Token<'_>> for BinaryOp {
     type Error = ();
 
     fn try_from(value: &Token) -> Result<Self, Self::Error> {
         match value.kind {
-            TokenKind::Plus => Ok(BinaryExpressionKind::Plus),
-            TokenKind::Minus => Ok(BinaryExpressionKind::Minus),
-            TokenKind::Asterisk => Ok(BinaryExpressionKind::Times),
-            TokenKind::Slash => Ok(BinaryExpressionKind::Div),
-            TokenKind::Lt => Ok(BinaryExpressionKind::Lesser),
-            TokenKind::Gt => Ok(BinaryExpressionKind::Greater),
-            TokenKind::Equals => Ok(BinaryExpressionKind::Equals),
-            TokenKind::Differs => Ok(BinaryExpressionKind::Differs),
-            _ => Err(())
+            TokenKind::Plus => Ok(BinaryOp::Plus),
+            Minus => Ok(BinaryOp::Minus),
+            TokenKind::Asterisk => Ok(BinaryOp::Times),
+            TokenKind::Slash => Ok(BinaryOp::Div),
+            TokenKind::Lt => Ok(BinaryOp::Lesser),
+            TokenKind::Gt => Ok(BinaryOp::Greater),
+            TokenKind::Equals => Ok(BinaryOp::Equals),
+            TokenKind::Differs => Ok(BinaryOp::Differs),
+            _ => Err(()),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
+    use BinaryOp::Plus;
+    use StatementKind::{ExprStmt, LetStmt};
+
     #[test]
     fn parser_initialization() {
         let parser = Parser::from("1 + 2");
@@ -295,16 +280,15 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 9, end: 19 },
-                kind: StatementKind::Let {
+                kind: LetStmt {
                     name: "x".into(),
                     expr: Expression {
                         span: Span { start: 17, end: 18 },
-                        kind: ExpressionKind::LiteralInteger { value: 5 },
+                        kind: LiteralInteger { value: 5 },
                     },
                 },
             }
         );
-
 
         assert_eq!(&input[28..39], "let y = 10;");
         assert_eq!(&input[36..38], "10");
@@ -312,11 +296,11 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 28, end: 39 },
-                kind: StatementKind::Let {
+                kind: LetStmt {
                     name: "y".into(),
                     expr: Expression {
                         span: Span { start: 36, end: 38 },
-                        kind: ExpressionKind::LiteralInteger { value: 10 },
+                        kind: LiteralInteger { value: 10 },
                     },
                 },
             }
@@ -328,11 +312,11 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 48, end: 68 },
-                kind: StatementKind::Let {
+                kind: LetStmt {
                     name: "foobar".into(),
                     expr: Expression {
                         span: Span { start: 61, end: 67 },
-                        kind: ExpressionKind::LiteralInteger { value: 838383 },
+                        kind: LiteralInteger { value: 838383 },
                     },
                 },
             }
@@ -349,17 +333,16 @@ mod tests {
 
         let parser = Parser::from(input);
 
-
         assert_eq!(&input[9..18], "return 5;");
         assert_eq!(&input[16..17], "5");
         assert_eq!(
             parser.next_statement(),
             Statement {
                 span: Span { start: 9, end: 18 },
-                kind: StatementKind::Return {
+                kind: ReturnStmt {
                     expr: Expression {
                         span: Span { start: 16, end: 17 },
-                        kind: ExpressionKind::LiteralInteger { value: 5 },
+                        kind: LiteralInteger { value: 5 },
                     }
                 },
             }
@@ -371,10 +354,10 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 27, end: 37 },
-                kind: StatementKind::Return {
+                kind: ReturnStmt {
                     expr: Expression {
                         span: Span { start: 34, end: 36 },
-                        kind: ExpressionKind::LiteralInteger { value: 10 },
+                        kind: LiteralInteger { value: 10 },
                     }
                 },
             }
@@ -386,10 +369,10 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 46, end: 60 },
-                kind: StatementKind::Return {
+                kind: ReturnStmt {
                     expr: Expression {
                         span: Span { start: 53, end: 59 },
-                        kind: ExpressionKind::LiteralInteger { value: 993322 },
+                        kind: LiteralInteger { value: 993322 },
                     }
                 },
             }
@@ -415,10 +398,10 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 9, end: 14 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 9, end: 13 },
-                        kind: ExpressionKind::Identifier { name: "name".into() },
+                        kind: Identifier { name: "name".into() },
                     }
                 },
             }
@@ -430,10 +413,10 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 23, end: 27 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 23, end: 27 },
-                        kind: ExpressionKind::Identifier { name: "name".into() },
+                        kind: Identifier { name: "name".into() },
                     }
                 },
             }
@@ -445,10 +428,10 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 36, end: 38 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 36, end: 37 },
-                        kind: ExpressionKind::LiteralInteger { value: 5 },
+                        kind: LiteralInteger { value: 5 },
                     }
                 },
             }
@@ -460,10 +443,10 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 47, end: 48 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 47, end: 48 },
-                        kind: ExpressionKind::LiteralInteger { value: 5 },
+                        kind: LiteralInteger { value: 5 },
                     }
                 },
             }
@@ -476,17 +459,15 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 57, end: 60 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 57, end: 59 },
-                        kind: ExpressionKind::Unary {
-                            value: UnaryExpression {
-                                kind: UnaryExpressionKind::Not,
-                                expr: Box::from(Expression {
-                                    span: Span { start: 58, end: 59 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                            }
+                        kind: Unary {
+                            op: UnaryOp::Not,
+                            expr: Box::from(Expression {
+                                span: Span { start: 58, end: 59 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
                         },
                     }
                 },
@@ -500,17 +481,15 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 69, end: 73 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 69, end: 72 },
-                        kind: ExpressionKind::Unary {
-                            value: UnaryExpression {
-                                kind: UnaryExpressionKind::Minus,
-                                expr: Box::from(Expression {
-                                    span: Span { start: 70, end: 72 },
-                                    kind: ExpressionKind::LiteralInteger { value: 15 },
-                                }),
-                            }
+                        kind: Unary {
+                            op: UnaryOp::Minus,
+                            expr: Box::from(Expression {
+                                span: Span { start: 70, end: 72 },
+                                kind: LiteralInteger { value: 15 },
+                            }),
                         },
                     }
                 },
@@ -541,21 +520,19 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 9, end: 15 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 9, end: 14 },
-                        kind: ExpressionKind::Binary {
-                            value: BinaryExpression {
-                                kind: BinaryExpressionKind::Plus,
-                                left: Box::from(Expression {
-                                    span: Span { start: 9, end: 10 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                                right: Box::from(Expression {
-                                    span: Span { start: 13, end: 14 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                            }
+                        kind: Binary {
+                            op: Plus,
+                            left: Box::from(Expression {
+                                span: Span { start: 9, end: 10 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
+                            right: Box::from(Expression {
+                                span: Span { start: 13, end: 14 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
                         },
                     }
                 },
@@ -570,21 +547,19 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 24, end: 30 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 24, end: 29 },
-                        kind: ExpressionKind::Binary {
-                            value: BinaryExpression {
-                                kind: BinaryExpressionKind::Minus,
-                                left: Box::from(Expression {
-                                    span: Span { start: 24, end: 25 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                                right: Box::from(Expression {
-                                    span: Span { start: 28, end: 29 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                            }
+                        kind: Binary {
+                            op: BinaryOp::Minus,
+                            left: Box::from(Expression {
+                                span: Span { start: 24, end: 25 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
+                            right: Box::from(Expression {
+                                span: Span { start: 28, end: 29 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
                         },
                     }
                 },
@@ -599,21 +574,19 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 39, end: 45 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 39, end: 44 },
-                        kind: ExpressionKind::Binary {
-                            value: BinaryExpression {
-                                kind: BinaryExpressionKind::Times,
-                                left: Box::from(Expression {
-                                    span: Span { start: 39, end: 40 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                                right: Box::from(Expression {
-                                    span: Span { start: 43, end: 44 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                            }
+                        kind: Binary {
+                            op: BinaryOp::Times,
+                            left: Box::from(Expression {
+                                span: Span { start: 39, end: 40 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
+                            right: Box::from(Expression {
+                                span: Span { start: 43, end: 44 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
                         },
                     }
                 },
@@ -628,21 +601,19 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 54, end: 60 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 54, end: 59 },
-                        kind: ExpressionKind::Binary {
-                            value: BinaryExpression {
-                                kind: BinaryExpressionKind::Div,
-                                left: Box::from(Expression {
-                                    span: Span { start: 54, end: 55 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                                right: Box::from(Expression {
-                                    span: Span { start: 58, end: 59 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                            }
+                        kind: Binary {
+                            op: BinaryOp::Div,
+                            left: Box::from(Expression {
+                                span: Span { start: 54, end: 55 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
+                            right: Box::from(Expression {
+                                span: Span { start: 58, end: 59 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
                         },
                     }
                 },
@@ -657,21 +628,19 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 69, end: 75 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 69, end: 74 },
-                        kind: ExpressionKind::Binary {
-                            value: BinaryExpression {
-                                kind: BinaryExpressionKind::Greater,
-                                left: Box::from(Expression {
-                                    span: Span { start: 69, end: 70 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                                right: Box::from(Expression {
-                                    span: Span { start: 73, end: 74 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                            }
+                        kind: Binary {
+                            op: BinaryOp::Greater,
+                            left: Box::from(Expression {
+                                span: Span { start: 69, end: 70 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
+                            right: Box::from(Expression {
+                                span: Span { start: 73, end: 74 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
                         },
                     }
                 },
@@ -686,21 +655,19 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 84, end: 90 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 84, end: 89 },
-                        kind: ExpressionKind::Binary {
-                            value: BinaryExpression {
-                                kind: BinaryExpressionKind::Lesser,
-                                left: Box::from(Expression {
-                                    span: Span { start: 84, end: 85 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                                right: Box::from(Expression {
-                                    span: Span { start: 88, end: 89 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                            }
+                        kind: Binary {
+                            op: BinaryOp::Lesser,
+                            left: Box::from(Expression {
+                                span: Span { start: 84, end: 85 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
+                            right: Box::from(Expression {
+                                span: Span { start: 88, end: 89 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
                         },
                     }
                 },
@@ -715,21 +682,19 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 99, end: 106 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 99, end: 105 },
-                        kind: ExpressionKind::Binary {
-                            value: BinaryExpression {
-                                kind: BinaryExpressionKind::Equals,
-                                left: Box::from(Expression {
-                                    span: Span { start: 99, end: 100 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                                right: Box::from(Expression {
-                                    span: Span { start: 104, end: 105 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                            }
+                        kind: Binary {
+                            op: BinaryOp::Equals,
+                            left: Box::from(Expression {
+                                span: Span { start: 99, end: 100 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
+                            right: Box::from(Expression {
+                                span: Span { start: 104, end: 105 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
                         },
                     }
                 },
@@ -744,21 +709,19 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 115, end: 122 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 115, end: 121 },
-                        kind: ExpressionKind::Binary {
-                            value: BinaryExpression {
-                                kind: BinaryExpressionKind::Differs,
-                                left: Box::from(Expression {
-                                    span: Span { start: 115, end: 116 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                                right: Box::from(Expression {
-                                    span: Span { start: 120, end: 121 },
-                                    kind: ExpressionKind::LiteralInteger { value: 5 },
-                                }),
-                            }
+                        kind: Binary {
+                            op: BinaryOp::Differs,
+                            left: Box::from(Expression {
+                                span: Span { start: 115, end: 116 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
+                            right: Box::from(Expression {
+                                span: Span { start: 120, end: 121 },
+                                kind: LiteralInteger { value: 5 },
+                            }),
                         },
                     }
                 },
@@ -785,29 +748,25 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 9, end: 16 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 9, end: 15 },
-                        kind: ExpressionKind::Binary {
-                            value: BinaryExpression {
-                                kind: BinaryExpressionKind::Times,
-                                left: Box::from(Expression {
-                                    span: Span { start: 9, end: 11 },
-                                    kind: ExpressionKind::Unary {
-                                        value: UnaryExpression {
-                                            kind: UnaryExpressionKind::Minus,
-                                            expr: Box::from(Expression {
-                                                span: Span { start: 10, end: 11 },
-                                                kind: ExpressionKind::Identifier { name: "a".into() },
-                                            }),
-                                        }
-                                    },
-                                }),
-                                right: Box::from(Expression {
-                                    span: Span { start: 14, end: 15 },
-                                    kind: ExpressionKind::Identifier { name: "b".into() },
-                                }),
-                            }
+                        kind: Binary {
+                            op: BinaryOp::Times,
+                            left: Box::from(Expression {
+                                span: Span { start: 9, end: 11 },
+                                kind: Unary {
+                                    op: UnaryOp::Minus,
+                                    expr: Box::from(Expression {
+                                        span: Span { start: 10, end: 11 },
+                                        kind: Identifier { name: "a".into() },
+                                    }),
+                                },
+                            }),
+                            right: Box::from(Expression {
+                                span: Span { start: 14, end: 15 },
+                                kind: Identifier { name: "b".into() },
+                            }),
                         },
                     }
                 },
@@ -822,25 +781,21 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 25, end: 29 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 25, end: 28 },
-                        kind: ExpressionKind::Unary {
-                            value: UnaryExpression {
-                                kind: UnaryExpressionKind::Not,
-                                expr: Box::from(Expression {
-                                    span: Span { start: 26, end: 28 },
-                                    kind: ExpressionKind::Unary {
-                                        value: UnaryExpression {
-                                            kind: UnaryExpressionKind::Minus,
-                                            expr: Box::from(Expression {
-                                                span: Span { start: 27, end: 28 },
-                                                kind: ExpressionKind::Identifier { name: "a".into() },
-                                            }),
-                                        }
-                                    },
-                                }),
-                            }
+                        kind: Unary {
+                            op: UnaryOp::Not,
+                            expr: Box::from(Expression {
+                                span: Span { start: 26, end: 28 },
+                                kind: Unary {
+                                    op: UnaryOp::Minus,
+                                    expr: Box::from(Expression {
+                                        span: Span { start: 27, end: 28 },
+                                        kind: Identifier { name: "a".into() },
+                                    }),
+                                },
+                            }),
                         },
                     }
                 },
@@ -857,33 +812,29 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 38, end: 48 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 38, end: 47 },
-                        kind: ExpressionKind::Binary {
-                            value: BinaryExpression {
-                                kind: BinaryExpressionKind::Plus,
-                                left: Box::from(Expression {
-                                    span: Span { start: 38, end: 43 },
-                                    kind: ExpressionKind::Binary {
-                                        value: BinaryExpression {
-                                            kind: BinaryExpressionKind::Plus,
-                                            left: Box::from(Expression {
-                                                span: Span { start: 38, end: 39 },
-                                                kind: ExpressionKind::Identifier { name: "a".into() },
-                                            }),
-                                            right: Box::from(Expression {
-                                                span: Span { start: 42, end: 43 },
-                                                kind: ExpressionKind::Identifier { name: "b".into() },
-                                            }),
-                                        }
-                                    },
-                                }),
-                                right: Box::from(Expression {
-                                    span: Span { start: 46, end: 47 },
-                                    kind: ExpressionKind::Identifier { name: "c".into() },
-                                }),
-                            }
+                        kind: Binary {
+                            op: Plus,
+                            left: Box::from(Expression {
+                                span: Span { start: 38, end: 43 },
+                                kind: Binary {
+                                    op: Plus,
+                                    left: Box::from(Expression {
+                                        span: Span { start: 38, end: 39 },
+                                        kind: Identifier { name: "a".into() },
+                                    }),
+                                    right: Box::from(Expression {
+                                        span: Span { start: 42, end: 43 },
+                                        kind: Identifier { name: "b".into() },
+                                    }),
+                                },
+                            }),
+                            right: Box::from(Expression {
+                                span: Span { start: 46, end: 47 },
+                                kind: Identifier { name: "c".into() },
+                            }),
                         },
                     }
                 },
@@ -908,12 +859,10 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 9, end: 14 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 9, end: 13 },
-                        kind: ExpressionKind::LiteralBoolean {
-                            value: true
-                        },
+                        kind: LiteralBoolean { value: true },
                     }
                 },
             }
@@ -925,12 +874,10 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 23, end: 29 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 23, end: 28 },
-                        kind: ExpressionKind::LiteralBoolean {
-                            value: false
-                        },
+                        kind: LiteralBoolean { value: false },
                     }
                 },
             }
@@ -943,13 +890,11 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 38, end: 56 },
-                kind: StatementKind::Let {
+                kind: LetStmt {
                     name: "foobar".into(),
                     expr: Expression {
                         span: Span { start: 51, end: 55 },
-                        kind: ExpressionKind::LiteralBoolean {
-                            value: true
-                        },
+                        kind: LiteralBoolean { value: true },
                     },
                 },
             }
@@ -962,13 +907,11 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 65, end: 84 },
-                kind: StatementKind::Let {
+                kind: LetStmt {
                     name: "barfoo".into(),
                     expr: Expression {
                         span: Span { start: 78, end: 83 },
-                        kind: ExpressionKind::LiteralBoolean {
-                            value: false
-                        },
+                        kind: LiteralBoolean { value: false },
                     },
                 },
             }
@@ -999,46 +942,39 @@ mod tests {
             parser.next_statement(),
             Statement {
                 span: Span { start: 9, end: 25 },
-                kind: StatementKind::Expr {
+                kind: ExprStmt {
                     expr: Expression {
                         span: Span { start: 9, end: 24 },
-                        kind: ExpressionKind::Binary {
-                            value: BinaryExpression {
-                                kind: BinaryExpressionKind::Plus,
-                                left: Box::from(Expression {
-                                    span: Span { start: 9, end: 20 },
-                                    kind: ExpressionKind::Binary {
-                                        value: BinaryExpression {
-                                            kind: BinaryExpressionKind::Plus,
+                        kind: Binary {
+                            op: Plus,
+                            left: Box::from(Expression {
+                                span: Span { start: 9, end: 20 },
+                                kind: Binary {
+                                    op: Plus,
+                                    left: Box::from(Expression {
+                                        span: Span { start: 9, end: 10 },
+                                        kind: LiteralInteger { value: 1 },
+                                    }),
+                                    right: Box::from(Expression {
+                                        span: Span { start: 13, end: 20 },
+                                        kind: Binary {
+                                            op: Plus,
                                             left: Box::from(Expression {
-                                                span: Span { start: 9, end: 10 },
-                                                kind: ExpressionKind::LiteralInteger { value: 1 },
+                                                span: Span { start: 14, end: 15 },
+                                                kind: LiteralInteger { value: 2 },
                                             }),
                                             right: Box::from(Expression {
-                                                span: Span { start: 13, end: 20 },
-                                                kind: ExpressionKind::Binary {
-                                                    value: BinaryExpression {
-                                                        kind: BinaryExpressionKind::Plus,
-                                                        left: Box::from(Expression {
-                                                            span: Span { start: 14, end: 15 },
-                                                            kind: ExpressionKind::LiteralInteger { value: 2 },
-                                                        }),
-                                                        right: Box::from(Expression {
-                                                            span: Span { start: 18, end: 19 },
-                                                            kind: ExpressionKind::LiteralInteger { value: 3 },
-                                                        }),
-                                                    }
-                                                },
+                                                span: Span { start: 18, end: 19 },
+                                                kind: LiteralInteger { value: 3 },
                                             }),
-                                        }
-                                    },
-                                }),
-                                right: Box::from(Expression {
-                                    span: Span { start: 23, end: 24 },
-                                    kind: ExpressionKind::LiteralInteger { value: 4 },
-                                }),
-
-                            }
+                                        },
+                                    }),
+                                },
+                            }),
+                            right: Box::from(Expression {
+                                span: Span { start: 23, end: 24 },
+                                kind: LiteralInteger { value: 4 },
+                            }),
                         },
                     },
                 },

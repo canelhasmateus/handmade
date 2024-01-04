@@ -10,13 +10,13 @@ pub struct Span {
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub struct Token<'a > {
-    pub kind: TokenKind<'a >,
+pub struct Token<'a> {
+    pub kind: TokenKind<'a>,
     pub span: Span,
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub enum TokenKind<'a > {
+pub enum TokenKind<'a> {
     Eof,
 
     Bang,
@@ -125,7 +125,7 @@ impl Lexer<'_> {
         while matches!(current.kind, TokenKind::Blank { .. }) {
             current = self.concrete_token_after(&current.span);
         }
-        return current
+        return current;
     }
 
     pub fn move_to(&self, span: &Span) {
@@ -173,12 +173,9 @@ impl TokenKind<'_> {
     }
 }
 
-impl <'a> From<&'a str> for Lexer<'a> {
+impl<'a> From<&'a str> for Lexer<'a> {
     fn from(value: &'a str) -> Self {
-        return Lexer {
-            input: value,
-            position: 0.into(),
-        };
+        return Lexer { input: value, position: 0.into() };
     }
 }
 
@@ -267,9 +264,7 @@ mod tests {
         assert_eq!(lexer.next_semantic().kind, TokenKind::Let);
         assert_eq!(
             lexer.next_semantic().kind,
-            TokenKind::Ident {
-                name: "five".into()
-            }
+            TokenKind::Ident { name: "five".into() }
         );
         assert_eq!(lexer.next_semantic().kind, TokenKind::Assign);
         assert_eq!(lexer.next_semantic().kind, TokenKind::Int { value: 5 });
@@ -323,9 +318,7 @@ mod tests {
         assert_eq!(lexer.next_semantic().kind, TokenKind::Let);
         assert_eq!(
             lexer.next_semantic().kind,
-            TokenKind::Ident {
-                name: "result".into()
-            }
+            TokenKind::Ident { name: "result".into() }
         );
         assert_eq!(lexer.next_semantic().kind, TokenKind::Assign);
         assert_eq!(
@@ -335,9 +328,7 @@ mod tests {
         assert_eq!(lexer.next_semantic().kind, TokenKind::Lparen);
         assert_eq!(
             lexer.next_semantic().kind,
-            TokenKind::Ident {
-                name: "five".into()
-            }
+            TokenKind::Ident { name: "five".into() }
         );
         assert_eq!(lexer.next_semantic().kind, TokenKind::Comma);
         assert_eq!(
