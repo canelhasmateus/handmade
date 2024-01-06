@@ -1,11 +1,13 @@
-use ExpressionKind::{Identifier, IllegalExpression, LiteralBoolean, LiteralInteger, Unary};
+use ExpressionKind::{
+    Identifier, IllegalExpression, LiteralBoolean, LiteralFunction, LiteralInteger, Unary,
+};
 use StatementKind::{IllegalStatement, ReturnStmt};
 use TokenKind::{
     Assign, Bang, Else, Eof, False, Ident, Int, Lbrace, Let, Lparen, Minus, Rbrace, Return, Rparen,
     True,
 };
 
-use crate::lexer::TokenKind::{If, Semicolon};
+use crate::lexer::TokenKind::{Function, If, Semicolon};
 use crate::lexer::{Lexer, Span, Token, TokenKind};
 use crate::parser::ExpressionKind::{Binary, Conditional};
 use crate::parser::ExpressionPrecedence::{Equals, LesserGreater, Lowest, Prefix, Product, Sum};
@@ -43,6 +45,10 @@ pub enum ExpressionKind<'a> {
     },
     LiteralBoolean {
         value: bool,
+    },
+    LiteralFunction {
+        parameters: Vec<&'a str>,
+        body: StatementBlock<'a>,
     },
     Identifier {
         name: &'a str,
@@ -143,36 +149,66 @@ impl Parser<'_> {
         return statement;
     }
     pub fn expression_after(&self, start: &Span, precedence: ExpressionPrecedence) -> Expression {
-        let current = self.lexer.semantic_token_after(start);
-        let mut left = match current.kind {
-            True => Expression { span: current.span, kind: LiteralBoolean { value: true } },
-            False => Expression { span: current.span, kind: LiteralBoolean { value: false } },
+        let initial = self.lexer.semantic_token_after(start);
+        let mut left = match initial.kind {
+            True => Expression { span: initial.span, kind: LiteralBoolean { value: true } },
+            False => Expression { span: initial.span, kind: LiteralBoolean { value: false } },
 
-            Int { value } => Expression { span: current.span, kind: LiteralInteger { value } },
+            Int { value } => Expression { span: initial.span, kind: LiteralInteger { value } },
 
-            Ident { name } => Expression { span: current.span, kind: Identifier { name } },
+            Ident { name } => Expression { span: initial.span, kind: Identifier { name } },
+
+            Function => {
+                let lp = self.lexer.semantic_token_after(&initial.span);
+                let mut params: Vec<&str> = vec![];
+                let mut current = self.lexer.semantic_token_after(&lp.span);
+                loop {
+                    match current {
+                        Token { kind: Rparen, .. } => {
+                            let statement = self.statement_block_after(&current.span);
+                            return match statement {
+                                Some(block) => Expression {
+                                    span: Span { start: initial.span.start, end: block.span.end },
+                                    kind: LiteralFunction { parameters: params, body: block },
+                                },
+                                _ => Expression {
+                                    span: Span { start: current.span.end, end: current.span.end },
+                                    kind: IllegalExpression {
+                                        value: "expected statement block after function parameters",
+                                    },
+                                },
+                            };
+                        }
+                        Token { kind: Ident { name }, .. } => {
+                            params.push(name);
+                            current = self.lexer.semantic_token_after(&current.span);
+                        }
+
+                        Token { kind: TokenKind::Comma, .. } => {
+                            current = self.lexer.semantic_token_after(&current.span);
+                        }
+                        _ => todo!("{:?}", current),
+                    }
+                }
+            }
 
             If => {
-                let lp = self.lexer.semantic_token_after(&current.span);
+                let lp = self.lexer.semantic_token_after(&initial.span);
                 let expr = self.expression_after(&lp.span, Lowest);
                 let rp = self.lexer.semantic_token_after(&expr.span);
-                let lb = self.lexer.semantic_token_after(&rp.span);
-                let first = self.statement_block_after(&lb.span);
-                let rb = self.lexer.semantic_token_after(&first.span);
+                let positive = self.statement_block_after(&rp.span);
 
-                match (lp.kind, expr, rp.kind, lb.kind, first, rb.kind) {
-                    (Lparen, condition, Rparen, Lbrace, block, Rbrace) => {
-                        let mut span = Span { start: current.span.start, end: rb.span.end };
+                match (lp.kind, expr, rp.kind, positive) {
+                    (Lparen, condition, Rparen, Some(if_block)) => {
+                        let mut span = Span { start: initial.span.start, end: if_block.span.end };
 
-                        let token_else = self.lexer.semantic_token_after(&rb.span);
-                        let lb2 = self.lexer.semantic_token_after(&token_else.span);
-                        let second = self.statement_block_after(&lb2.span);
-                        let rb2 = self.lexer.semantic_token_after(&second.span);
+                        let token_else = self.lexer.semantic_token_after(&if_block.span);
+                        let alternative = self.statement_block_after(&token_else.span);
 
-                        let negative = match (token_else.kind, lb2.kind, second, rb2.kind) {
-                            (Else, Lbrace, alt, Rbrace) => {
-                                span.end = rb2.span.end;
-                                Some(alt)
+                        let negative = match (token_else.kind, alternative) {
+                            (Else, Some(else_block)) => {
+                                span.end = else_block.span.end;
+                                Some(else_block)
                             }
                             _ => None,
                         };
@@ -181,31 +217,31 @@ impl Parser<'_> {
                             span,
                             kind: Conditional {
                                 condition: Box::from(condition),
-                                positive: block,
+                                positive: if_block,
                                 negative,
                             },
                         }
                     }
                     _ => Expression {
                         // todo: read until Semicolon
-                        span: current.span,
-                        kind: IllegalExpression { value: self.lexer.slice(&current.span).into() },
+                        span: initial.span,
+                        kind: IllegalExpression { value: self.lexer.slice(&initial.span).into() },
                     },
                 }
             }
 
             Bang | Minus => {
-                let expr = self.expression_after(&current.span, Prefix);
+                let expr = self.expression_after(&initial.span, Prefix);
                 Expression {
-                    span: Span { start: current.span.start, end: expr.span.end },
-                    kind: Unary { op: UnaryOp::try_from(&current).unwrap(), expr: expr.into() },
+                    span: Span { start: initial.span.start, end: expr.span.end },
+                    kind: Unary { op: UnaryOp::try_from(&initial).unwrap(), expr: expr.into() },
                 }
             }
 
             Lparen => {
-                let mut expr = self.expression_after(&current.span, Lowest);
+                let mut expr = self.expression_after(&initial.span, Lowest);
                 let right_par = self.lexer.semantic_token_after(&expr.span);
-                expr.span.start = current.span.start;
+                expr.span.start = initial.span.start;
                 expr.span.end = right_par.span.end;
                 match right_par.kind {
                     Rparen => expr,
@@ -218,8 +254,8 @@ impl Parser<'_> {
 
             _ => Expression {
                 // todo: read until Semicolon
-                span: current.span,
-                kind: IllegalExpression { value: self.lexer.slice(&current.span).into() },
+                span: initial.span,
+                kind: IllegalExpression { value: self.lexer.slice(&initial.span).into() },
             },
         };
 
@@ -242,17 +278,23 @@ impl Parser<'_> {
         }
     }
 
-    pub fn statement_block_after(&self, start: &Span) -> StatementBlock {
-        let mut current_pos = start.clone();
-        let mut current_token = self.lexer.semantic_token_after(start);
+    pub fn statement_block_after(&self, start: &Span) -> Option<StatementBlock> {
+        let mut lb = self.lexer.semantic_token_after(start);
+        if lb.kind != Lbrace {
+            return None;
+        }
+
+        let mut current_token = self.lexer.semantic_token_after(&lb.span);
+        let mut current_pos = lb.span;
         let mut res: Vec<Box<Statement>> = vec![];
+
         loop {
             match current_token.kind {
                 Eof | Rbrace => {
-                    return StatementBlock {
-                        span: Span { start: start.end, end: current_token.span.start },
+                    return Some(StatementBlock {
+                        span: Span { start: lb.span.start, end: current_token.span.end },
                         statements: res,
-                    }
+                    })
                 }
                 _ => {
                     let stmt = self.statement_after(&current_pos);
@@ -322,7 +364,7 @@ impl TryFrom<&Token<'_>> for BinaryOp {
 #[cfg(test)]
 mod tests {
     use crate::parser::BinaryOp::{OpLesser, OpPlus};
-    use crate::parser::ExpressionKind::Conditional;
+    use crate::parser::ExpressionKind::{Conditional, LiteralFunction};
     use crate::parser::Parser;
     use crate::parser::StatementKind::LetStmt;
 
@@ -1092,7 +1134,7 @@ mod tests {
                                 },
                             }),
                             positive: StatementBlock {
-                                span: Span { start: 21, end: 24 },
+                                span: Span { start: 20, end: 25 },
                                 statements: vec!(Box::from(Statement {
                                     span: Span { start: 22, end: 23 },
                                     kind: ExprStmt {
@@ -1141,7 +1183,7 @@ mod tests {
                                 },
                             }),
                             positive: StatementBlock {
-                                span: Span { start: 46, end: 49 },
+                                span: Span { start: 45, end: 50 },
                                 statements: vec!(Box::from(Statement {
                                     span: Span { start: 47, end: 48 },
                                     kind: ExprStmt {
@@ -1153,7 +1195,7 @@ mod tests {
                                 })),
                             },
                             negative: Some(StatementBlock {
-                                span: Span { start: 57, end: 60 },
+                                span: Span { start: 56, end: 61 },
                                 statements: vec!(Box::from(Statement {
                                     span: Span { start: 58, end: 59 },
                                     kind: ExprStmt {
@@ -1164,6 +1206,54 @@ mod tests {
                                     },
                                 })),
                             }),
+                        },
+                    },
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn function_expression() {
+        let input = "
+        fn(x, y) { x + y }
+        ";
+
+        let parser = Parser::from(input);
+
+        assert_eq!(&input[9..27], "fn(x, y) { x + y }");
+        assert_eq!(&input[18..27], "{ x + y }");
+        assert_eq!(
+            parser.next_statement(),
+            Statement {
+                span: Span { start: 9, end: 27 },
+                kind: ExprStmt {
+                    expr: Expression {
+                        span: Span { start: 9, end: 27 },
+                        kind: LiteralFunction {
+                            parameters: vec!("x", "y"),
+                            body: StatementBlock {
+                                span: Span { start: 18, end: 27 },
+                                statements: vec!(Box::from(Statement {
+                                    span: Span { start: 20, end: 25 },
+                                    kind: ExprStmt {
+                                        expr: Expression {
+                                            span: Span { start: 20, end: 25 },
+                                            kind: Binary {
+                                                op: BinaryOp::OpPlus,
+                                                left: Box::from(Expression {
+                                                    span: Span { start: 20, end: 21 },
+                                                    kind: Identifier { name: "x" },
+                                                }),
+                                                right: Box::from(Expression {
+                                                    span: Span { start: 24, end: 25 },
+                                                    kind: Identifier { name: "y" },
+                                                }),
+                                            },
+                                        }
+                                    },
+                                })),
+                            },
                         },
                     },
                 },
