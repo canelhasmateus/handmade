@@ -1,7 +1,7 @@
 use ExpressionKind::{
     Identifier, IllegalExpression, LiteralBoolean, LiteralFunction, LiteralInteger, Unary,
 };
-use StatementKind::{IllegalStatement, ReturnStmt};
+use StatementKind::{IllegalStatement, LetStmt, ReturnStmt};
 use TokenKind::{
     Assign, Bang, Else, Eof, False, Ident, Int, Lbrace, Let, Lparen, Minus, Rbrace, Return, Rparen,
     True,
@@ -9,20 +9,22 @@ use TokenKind::{
 
 use crate::lexer::TokenKind::{Function, If, Semicolon};
 use crate::lexer::{Lexer, Span, Token, TokenKind};
-use crate::parser::ExpressionKind::{Binary, Conditional};
-use crate::parser::ExpressionPrecedence::{Equals, LesserGreater, Lowest, Prefix, Product, Sum};
+use crate::parser::ExpressionKind::{Binary, Call, Conditional};
+use crate::parser::ExpressionPrecedence::{
+    Apply, Equals, LesserGreater, Lowest, Prefix, Product, Sum,
+};
 use crate::parser::StatementKind::ExprStmt;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Statement<'a> {
-    pub kind: StatementKind<'a>,
     pub span: Span,
+    pub kind: StatementKind<'a>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Expression<'a> {
-    pub kind: ExpressionKind<'a>,
     pub span: Span,
+    pub kind: ExpressionKind<'a>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -67,6 +69,10 @@ pub enum ExpressionKind<'a> {
         positive: StatementBlock<'a>,
         negative: Option<StatementBlock<'a>>,
     },
+    Call {
+        function: Box<Expression<'a>>,
+        arguments: Vec<Box<Expression<'a>>>,
+    },
     IllegalExpression {
         value: &'a str,
     },
@@ -97,6 +103,7 @@ pub enum ExpressionPrecedence {
     Sum,
     Product,
     Prefix,
+    Apply,
 }
 
 pub struct Parser<'a> {
@@ -122,7 +129,7 @@ impl Parser<'_> {
                 match (ident.kind, equals.kind) {
                     (Ident { name }, Assign) => Statement {
                         span: Span { start: current.span.start, end: expr.span.end },
-                        kind: StatementKind::LetStmt { name, expr },
+                        kind: LetStmt { name, expr },
                     },
                     _ => Statement {
                         span: Span { start: current.span.start, end: expr.span.end },
@@ -135,7 +142,7 @@ impl Parser<'_> {
                 let expr = self.expression_after(&span, Lowest);
                 Statement {
                     span: Span { start: current.span.start, end: expr.span.end },
-                    kind: StatementKind::ExprStmt { expr },
+                    kind: ExprStmt { expr },
                 }
             }
         };
@@ -265,21 +272,50 @@ impl Parser<'_> {
             if precedence >= next_precedence {
                 return left;
             }
-            match BinaryOp::try_from(&next_token) {
-                Err(()) => return left,
-                Ok(kind) => {
-                    let expr = self.expression_after(&next_token.span, next_precedence);
+
+            match next_token.kind {
+                Lparen => {
+                    let mut args: Vec<Box<Expression>> = vec![];
+                    let mut current = next_token;
+                    loop {
+                        let expr = self.expression_after(&current.span, Lowest);
+                        let tk = self.lexer.semantic_token_after(&expr.span);
+                        args.push(Box::from(expr));
+                        match tk.kind {
+                            TokenKind::Comma => current = tk,
+                            TokenKind::Rparen => {
+                                current = tk;
+                                break;
+                            }
+                            _ => continue,
+                        }
+                    }
+
                     left = Expression {
-                        span: Span { start: left.span.start, end: expr.span.end },
-                        kind: Binary { op: kind, left: Box::from(left), right: Box::from(expr) },
+                        span: Span { start: left.span.start, end: current.span.end },
+                        kind: Call { function: Box::from(left), arguments: args },
                     }
                 }
+                _ => match BinaryOp::try_from(&next_token) {
+                    Err(()) => return left,
+                    Ok(kind) => {
+                        let expr = self.expression_after(&next_token.span, next_precedence);
+                        left = Expression {
+                            span: Span { start: left.span.start, end: expr.span.end },
+                            kind: Binary {
+                                op: kind,
+                                left: Box::from(left),
+                                right: Box::from(expr),
+                            },
+                        }
+                    }
+                },
             }
         }
     }
 
     pub fn statement_block_after(&self, start: &Span) -> Option<StatementBlock> {
-        let mut lb = self.lexer.semantic_token_after(start);
+        let lb = self.lexer.semantic_token_after(start);
         if lb.kind != Lbrace {
             return None;
         }
@@ -338,6 +374,7 @@ impl From<&Token<'_>> for ExpressionPrecedence {
             TokenKind::Asterisk | TokenKind::Slash => Product,
             TokenKind::Lt | TokenKind::Gt => LesserGreater,
             TokenKind::Equals | TokenKind::Differs => Equals,
+            TokenKind::Lparen => Apply,
             _ => Lowest,
         }
     }
@@ -363,7 +400,7 @@ impl TryFrom<&Token<'_>> for BinaryOp {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::BinaryOp::{OpLesser, OpPlus};
+    use crate::parser::BinaryOp::{OpLesser, OpPlus, OpTimes};
     use crate::parser::ExpressionKind::{Conditional, LiteralFunction};
     use crate::parser::Parser;
     use crate::parser::StatementKind::LetStmt;
@@ -1240,7 +1277,7 @@ mod tests {
                                         expr: Expression {
                                             span: Span { start: 20, end: 25 },
                                             kind: Binary {
-                                                op: BinaryOp::OpPlus,
+                                                op: OpPlus,
                                                 left: Box::from(Expression {
                                                     span: Span { start: 20, end: 21 },
                                                     kind: Identifier { name: "x" },
@@ -1254,6 +1291,68 @@ mod tests {
                                     },
                                 })),
                             },
+                        },
+                    },
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn call_expression() {
+        let input = "
+        add(1, 2 * 3, 4 + 5 );
+        ";
+
+        let parser = Parser::from(input);
+
+        assert_eq!(&input[9..31], "add(1, 2 * 3, 4 + 5 );");
+        assert_eq!(
+            parser.next_statement(),
+            Statement {
+                span: Span { start: 9, end: 31 },
+                kind: ExprStmt {
+                    expr: Expression {
+                        span: Span { start: 9, end: 30 },
+                        kind: Call {
+                            function: Box::from(Expression {
+                                span: Span { start: 9, end: 12 },
+                                kind: Identifier { name: "add" },
+                            }),
+                            arguments: vec!(
+                                Box::from(Expression {
+                                    span: Span { start: 13, end: 14 },
+                                    kind: LiteralInteger { value: 1 },
+                                }),
+                                Box::from(Expression {
+                                    span: Span { start: 16, end: 21 },
+                                    kind: Binary {
+                                        op: OpTimes,
+                                        left: Box::from(Expression {
+                                            span: Span { start: 16, end: 17 },
+                                            kind: LiteralInteger { value: 2 },
+                                        }),
+                                        right: Box::from(Expression {
+                                            span: Span { start: 20, end: 21 },
+                                            kind: LiteralInteger { value: 3 },
+                                        }),
+                                    },
+                                }),
+                                Box::from(Expression {
+                                    span: Span { start: 23, end: 28 },
+                                    kind: Binary {
+                                        op: OpPlus,
+                                        left: Box::from(Expression {
+                                            span: Span { start: 23, end: 24 },
+                                            kind: LiteralInteger { value: 4 },
+                                        }),
+                                        right: Box::from(Expression {
+                                            span: Span { start: 27, end: 28 },
+                                            kind: LiteralInteger { value: 5 },
+                                        }),
+                                    },
+                                }),
+                            ),
                         },
                     },
                 },
