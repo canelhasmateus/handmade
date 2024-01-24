@@ -2,14 +2,15 @@ use std::ops::Deref;
 
 use crate::parser::StatementKind::EndStatement;
 use crate::parser::{
-    BinaryOp, Expression, ExpressionKind, Node, Parser, StatementBlock, StatementKind, UnaryOp,
+    BinaryOp, Expression, ExpressionKind, Parser, StatementBlock, StatementKind, UnaryOp,
 };
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 enum Object {
     Integer(i32),
     Boolean(Booleans),
     Null,
+    Return(Box<Object>),
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -32,18 +33,13 @@ fn eval_source(str: &str) -> Object {
     return eval_program(program);
 }
 
-fn eval(node: Node) -> Object {
-    return match node {
-        Node::Expr(expr) => eval_expression(expr),
-        Node::Stmt(stmt) => eval_statement(stmt),
-        Node::Program(v) => eval_program(v),
-    };
-}
-
 fn eval_program(v: Vec<StatementKind>) -> Object {
     let mut result = Object::Null;
     for e in v {
-        result = eval(Node::Stmt(&e))
+        result = match eval_statement(&e) {
+            Object::Return(ret) => return *ret,
+            other => other,
+        }
     }
     result
 }
@@ -51,8 +47,10 @@ fn eval_program(v: Vec<StatementKind>) -> Object {
 fn eval_statement(stmt: &StatementKind) -> Object {
     match stmt {
         StatementKind::ExprStmt { expr } => eval_expression(&expr.kind),
+        StatementKind::ReturnStmt { expr } => {
+            Object::Return(Box::from(eval_expression(&expr.kind)))
+        }
         StatementKind::LetStmt { .. } => todo!(),
-        StatementKind::ReturnStmt { .. } => todo!(),
         StatementKind::IllegalStatement { .. } => todo!(),
         EndStatement => todo!(),
     }
@@ -107,14 +105,17 @@ fn eval_conditional(
             },
         },
         Object::Integer(i) => eval_block(positive),
-        Object::Null => Object::Null,
+        _ => Object::Null,
     }
 }
 
 fn eval_block(block: &StatementBlock) -> Object {
     let mut result = Object::Null;
     for x in &block.statements {
-        result = eval_statement(&x.kind)
+        result = eval_statement(&x.kind);
+        if matches!(result, Object::Return(_)) {
+            return result;
+        }
     }
     return result;
 }
@@ -255,6 +256,24 @@ mod tests {
         );
         assert_eq!(
             eval_source("if (1 < 2 ) { 10 } else { 20 }"),
+            Object::Integer(10)
+        );
+    }
+
+    #[test]
+    fn returns() {
+        // assert_eq!(eval_source("9; return 2 * 5; 9;"), Object::Integer(10));
+        assert_eq!(
+            eval_source(
+                "
+        if (10 > 1) {
+            if (10 > 1) {
+                return 10;
+            }
+
+            return 1;
+        }"
+            ),
             Object::Integer(10)
         );
     }

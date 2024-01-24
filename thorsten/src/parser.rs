@@ -15,12 +15,6 @@ use crate::parser::ExpressionPrecedence::{
 };
 use crate::parser::StatementKind::{EndStatement, ExprStmt};
 
-pub enum Node<'a> {
-    Stmt(&'a StatementKind<'a>),
-    Expr(&'a ExpressionKind<'a>),
-    Program(Vec<StatementKind<'a>>),
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct Statement<'a> {
     pub span: Span,
