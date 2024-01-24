@@ -1,15 +1,20 @@
-use crate::eval::Object::{False, True};
+use std::ops::Deref;
+
 use crate::parser::StatementKind::EndStatement;
-use crate::parser::{ExpressionKind, Node, Parser, StatementKind, UnaryOp};
+use crate::parser::{BinaryOp, ExpressionKind, Node, Parser, StatementKind, UnaryOp};
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 enum Object {
     Integer(i32),
-    True,
-    False,
+    Boolean(Booleans),
     Null,
 }
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+enum Booleans {
+    True,
+    False,
+}
 fn eval_source(str: &str) -> Object {
     let parser = Parser::from(str);
     let mut program: Vec<StatementKind> = vec![];
@@ -28,14 +33,14 @@ fn eval_source(str: &str) -> Object {
 fn eval(node: Node) -> Object {
     return match node {
         Node::Expr(expr) => match expr {
-            ExpressionKind::LiteralInteger { value } => Object::Integer(value),
-            ExpressionKind::LiteralBoolean { value } => as_boolean(value),
-            ExpressionKind::Unary { op, expr } => match (op, expr.kind) {
+            ExpressionKind::LiteralInteger { value } => Object::Integer(*value),
+            ExpressionKind::LiteralBoolean { value } => as_boolean(*value),
+            ExpressionKind::Unary { op, expr } => match (op, &expr.kind) {
                 (UnaryOp::OpNot, k) => match eval(Node::Expr(k)) {
-                    Object::True => False,
-                    Object::False => True,
-                    Object::Null => True,
-                    _ => False,
+                    Object::Boolean(Booleans::True) => Object::Boolean(Booleans::False),
+                    Object::Boolean(Booleans::False) => Object::Boolean(Booleans::True),
+                    Object::Null => Object::Boolean(Booleans::False),
+                    _ => Object::Boolean(Booleans::False),
                 },
 
                 (UnaryOp::OpNeg, k) => match eval(Node::Expr(k)) {
@@ -45,33 +50,64 @@ fn eval(node: Node) -> Object {
             },
             ExpressionKind::LiteralFunction { .. } => todo!(),
             ExpressionKind::Identifier { .. } => todo!(),
-            ExpressionKind::Binary { .. } => todo!(),
+            ExpressionKind::Binary { op, left, right } => {
+                match (eval(Node::Expr(&left.kind)), eval(Node::Expr(&right.kind))) {
+                    (Object::Integer(l), Object::Integer(r)) => eval_int(op, l, r),
+                    (Object::Boolean(l), Object::Boolean(r)) => eval_bool(op, l, r),
+                    _ => todo!(),
+                }
+            }
             ExpressionKind::Conditional { .. } => todo!(),
             ExpressionKind::Call { .. } => todo!(),
             ExpressionKind::IllegalExpression { .. } => todo!(),
         },
 
         Node::Stmt(stmt) => match stmt {
-            StatementKind::ExprStmt { expr } => eval(Node::Expr(expr.kind)),
+            StatementKind::ExprStmt { expr } => eval(Node::Expr(&expr.kind)),
             StatementKind::LetStmt { .. } => todo!(),
             StatementKind::ReturnStmt { .. } => todo!(),
             StatementKind::IllegalStatement { .. } => todo!(),
             EndStatement => todo!(),
         },
+
         Node::Program(v) => {
             let mut result = Object::Null;
             for e in v {
-                result = eval(Node::Stmt(e))
+                result = eval(Node::Stmt(&e))
             }
             return result;
         }
     };
 }
 
+fn eval_bool(op: &BinaryOp, l: Booleans, r: Booleans) -> Object {
+    match op {
+        BinaryOp::OpEquals => as_boolean(l == r),
+        BinaryOp::OpDiffers => as_boolean(l != r),
+        _ => Object::Null,
+    }
+}
+
+fn eval_int(op: &BinaryOp, l: i32, r: i32) -> Object {
+    match op {
+        BinaryOp::OpPlus => Object::Integer(l + r),
+        BinaryOp::OpMinus => Object::Integer(l - r),
+        BinaryOp::OpTimes => Object::Integer(l * r),
+        BinaryOp::OpDiv => match r {
+            0 => Object::Null,
+            _ => Object::Integer(l / r),
+        },
+        BinaryOp::OpGreater => as_boolean(l > r),
+        BinaryOp::OpLesser => as_boolean(l < r),
+        BinaryOp::OpEquals => as_boolean(l == r),
+        BinaryOp::OpDiffers => as_boolean(l != r),
+    }
+}
+
 fn as_boolean(value: bool) -> Object {
     match value {
-        true => Object::True,
-        false => Object::False,
+        true => Object::Boolean(Booleans::True),
+        false => Object::Boolean(Booleans::False),
     }
 }
 
@@ -91,19 +127,77 @@ mod tests {
         let input = "true";
         let result = eval_source(input);
 
-        assert_eq!(result, Object::True);
+        assert_eq!(result, Object::Boolean(Booleans::True));
     }
 
     #[test]
     fn unaries() {
-        assert_eq!(eval_source("!5"), Object::False);
-        assert_eq!(eval_source("!true"), Object::False);
-        assert_eq!(eval_source("!!false"), Object::False);
+        assert_eq!(eval_source("!5"), Object::Boolean(Booleans::False));
+        assert_eq!(eval_source("!true"), Object::Boolean(Booleans::False));
+        assert_eq!(eval_source("!!false"), Object::Boolean(Booleans::False));
 
-        assert_eq!(eval_source("!!5"), Object::True);
-        assert_eq!(eval_source("!false"), Object::True);
-        assert_eq!(eval_source("!!true"), Object::True);
+        assert_eq!(eval_source("!!5"), Object::Boolean(Booleans::True));
+        assert_eq!(eval_source("!false"), Object::Boolean(Booleans::True));
+        assert_eq!(eval_source("!!true"), Object::Boolean(Booleans::True));
 
         assert_eq!(eval_source("-5"), Object::Integer(-5));
+        assert_eq!(eval_source("!-5"), Object::Boolean(Booleans::False));
+        assert_eq!(eval_source("!!-5"), Object::Boolean(Booleans::True));
+        assert_eq!(eval_source("-true"), Object::Null);
+    }
+
+    #[test]
+    fn int_binaries() {
+        assert_eq!(eval_source("5 + 5"), Object::Integer(10));
+        assert_eq!(eval_source("5 - 5"), Object::Integer(0));
+        assert_eq!(eval_source("5 * 5"), Object::Integer(25));
+        assert_eq!(eval_source("5 / 5"), Object::Integer(1));
+        assert_eq!(eval_source("5 / 0"), Object::Null);
+
+        assert_eq!(eval_source("5 > 5"), Object::Boolean(Booleans::False));
+        assert_eq!(eval_source("5 < 5"), Object::Boolean(Booleans::False));
+        assert_eq!(eval_source("5 != 5"), Object::Boolean(Booleans::False));
+        assert_eq!(eval_source("5 == 5"), Object::Boolean(Booleans::True));
+
+        assert_eq!(
+            eval_source("(5 + 10 * 2 + 15 / 3 ) * 2 + -10"),
+            Object::Integer(50)
+        );
+    }
+
+    #[test]
+    fn bool_binaries() {
+        assert_eq!(eval_source("true == true"), Object::Boolean(Booleans::True));
+        assert_eq!(
+            eval_source("true == false"),
+            Object::Boolean(Booleans::False)
+        );
+
+        assert_eq!(
+            eval_source("true != true"),
+            Object::Boolean(Booleans::False)
+        );
+        assert_eq!(
+            eval_source("true != false"),
+            Object::Boolean(Booleans::True)
+        );
+
+        assert_eq!(
+            eval_source("(1 < 2) == true"),
+            Object::Boolean(Booleans::True)
+        );
+        assert_eq!(
+            eval_source("(1 < 2) == false"),
+            Object::Boolean(Booleans::False)
+        );
+
+        assert_eq!(
+            eval_source("(1 > 2) == true"),
+            Object::Boolean(Booleans::False)
+        );
+        assert_eq!(
+            eval_source("(1 > 2) == false"),
+            Object::Boolean(Booleans::True)
+        );
     }
 }
