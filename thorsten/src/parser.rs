@@ -44,8 +44,8 @@ pub enum StatementKind<'a> {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct StatementBlock<'a> {
-    span: Span,
-    statements: Vec<Box<Statement<'a>>>,
+    pub span: Span,
+    pub statements: Vec<Box<Statement<'a>>>,
 }
 #[derive(Debug, PartialEq, Eq)]
 pub enum ExpressionKind<'a> {
