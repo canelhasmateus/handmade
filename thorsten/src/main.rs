@@ -1,5 +1,6 @@
 // #![feature(test)]
 
+mod eval;
 mod lexer;
 mod parser;
 

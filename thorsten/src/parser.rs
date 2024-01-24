@@ -13,7 +13,13 @@ use crate::parser::ExpressionKind::{Binary, Call, Conditional};
 use crate::parser::ExpressionPrecedence::{
     Apply, Equals, LesserGreater, Lowest, Prefix, Product, Sum,
 };
-use crate::parser::StatementKind::ExprStmt;
+use crate::parser::StatementKind::{EndStatement, ExprStmt};
+
+pub enum Node<'a> {
+    Stmt(StatementKind<'a>),
+    Expr(ExpressionKind<'a>),
+    Program(Vec<StatementKind<'a>>),
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Statement<'a> {
@@ -33,6 +39,7 @@ pub enum StatementKind<'a> {
     ReturnStmt { expr: Expression<'a> },
     ExprStmt { expr: Expression<'a> },
     IllegalStatement { expr: Expression<'a> },
+    EndStatement,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -95,6 +102,7 @@ pub enum BinaryOp {
     OpEquals,
     OpDiffers,
 }
+
 #[derive(Clone, Copy, PartialOrd, PartialEq)]
 pub enum ExpressionPrecedence {
     Lowest,
@@ -137,6 +145,7 @@ impl Parser<'_> {
                     },
                 }
             }
+            Eof => Statement { span: span.clone(), kind: EndStatement },
 
             _ => {
                 let expr = self.expression_after(&span, Lowest);
@@ -155,6 +164,7 @@ impl Parser<'_> {
 
         return statement;
     }
+
     pub fn expression_after(&self, start: &Span, precedence: ExpressionPrecedence) -> Expression {
         let initial = self.lexer.semantic_token_after(start);
         let mut left = match initial.kind {

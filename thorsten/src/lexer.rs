@@ -1,7 +1,8 @@
 use std::cell::RefCell;
 use std::cmp::min;
 
-use crate::lexer::LiteralKind::{DIGIT, EQ, LETTER, OTHER, WHITESPACE};
+use crate::lexer::LiteralKind::{DIGIT, LETTER, OTHER, WHITESPACE};
+use crate::lexer::TokenKind::{Assign, Bang, Differs, Equals};
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub struct Span {
@@ -92,18 +93,19 @@ impl Lexer<'_> {
 
             '<' => TokenKind::Lt,
             '>' => TokenKind::Gt,
+            '!' => match rest.chars().nth(1).unwrap_or('\0') {
+                '=' => Differs,
+                _ => Bang,
+            },
+            '=' => match rest.chars().nth(1).unwrap_or('\0') {
+                '=' => Equals,
+                _ => Assign,
+            },
 
             _ => match contiguous(rest) {
                 (DIGIT, content) => TokenKind::Int { value: content.parse::<i32>().unwrap() },
                 (WHITESPACE, content) => TokenKind::Blank { value: content.into() },
                 (OTHER, content) => TokenKind::Illegal { value: content.into() },
-                (EQ, content) => match content {
-                    "=" => TokenKind::Assign,
-                    "!" => TokenKind::Bang,
-                    "==" => TokenKind::Equals,
-                    "!=" => TokenKind::Differs,
-                    value => TokenKind::Illegal { value: value.into() },
-                },
                 (LETTER, content) => match content {
                     "let" => TokenKind::Let,
                     "fn" => TokenKind::Function,
@@ -181,7 +183,6 @@ impl<'a> From<&'a str> for Lexer<'a> {
 
 #[derive(Eq, PartialEq)]
 enum LiteralKind {
-    EQ,
     LETTER,
     DIGIT,
     WHITESPACE,
@@ -191,7 +192,6 @@ enum LiteralKind {
 fn literal_kind(value: char) -> LiteralKind {
     match value {
         ' ' | '\t' | '\n' | '\r' => WHITESPACE,
-        '=' | '!' => EQ,
         '_' | 'a'..='z' | 'A'..='Z' => LETTER,
         '0'..='9' => DIGIT,
         _ => OTHER,
@@ -420,6 +420,33 @@ mod tests {
         assert_eq!(lexer.next_semantic().kind, TokenKind::Differs);
         assert_eq!(lexer.next_semantic().kind, TokenKind::Int { value: 9 });
         assert_eq!(lexer.next_semantic().kind, TokenKind::Semicolon);
+
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Eof);
+    }
+
+    #[test]
+    fn regression_doubles() {
+        let source = "
+        =
+        !
+
+        ==
+        !=
+
+        !!false
+        ";
+
+        let lexer = Lexer::from(source);
+
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Assign);
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Bang);
+
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Equals);
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Differs);
+
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Bang);
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Bang);
+        assert_eq!(lexer.next_semantic().kind, TokenKind::False);
 
         assert_eq!(lexer.next_semantic().kind, TokenKind::Eof);
     }
