@@ -1,5 +1,6 @@
 use std::ops::Deref;
 
+use crate::eval::Object::Error;
 use crate::parser::StatementKind::EndStatement;
 use crate::parser::{
     BinaryOp, Expression, ExpressionKind, Parser, StatementBlock, StatementKind, UnaryOp,
@@ -11,6 +12,7 @@ enum Object {
     Boolean(Booleans),
     Null,
     Return(Box<Object>),
+    Error(String),
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -38,6 +40,7 @@ fn eval_program(v: Vec<StatementKind>) -> Object {
     for e in v {
         result = match eval_statement(&e) {
             Object::Return(ret) => return *ret,
+            error @ Object::Error { .. } => return error,
             other => other,
         }
     }
@@ -51,7 +54,7 @@ fn eval_statement(stmt: &StatementKind) -> Object {
             Object::Return(Box::from(eval_expression(&expr.kind)))
         }
         StatementKind::LetStmt { .. } => todo!(),
-        StatementKind::IllegalStatement { .. } => todo!(),
+        StatementKind::IllegalStatement { expr } => Error(format!("Illegal Statement: {:?}", expr)),
         EndStatement => todo!(),
     }
 }
@@ -70,7 +73,7 @@ fn eval_expression(expr: &ExpressionKind) -> Object {
 
             (UnaryOp::OpNeg, k) => match eval_expression(k) {
                 Object::Integer(value) => Object::Integer(-value),
-                _ => Object::Null,
+                obj => Error(format!("Unknown operator: -{:?}", obj)),
             },
         },
         ExpressionKind::LiteralFunction { .. } => todo!(),
@@ -79,10 +82,10 @@ fn eval_expression(expr: &ExpressionKind) -> Object {
             match (eval_expression(&left.kind), eval_expression(&right.kind)) {
                 (Object::Integer(l), Object::Integer(r)) => eval_binary_int(op, l, r),
                 (Object::Boolean(l), Object::Boolean(r)) => eval_binary_bool(op, l, r),
-                _ => todo!(),
+                (l, r) => Error(format!("Unknown operator: {:?} {:?} {:?}", l, op, r)),
             }
         }
-        ExpressionKind::Conditional { condition, positive, negative } => {
+        e @ ExpressionKind::Conditional { condition, positive, negative } => {
             eval_conditional(condition, positive, negative)
         }
 
@@ -105,6 +108,7 @@ fn eval_conditional(
             },
         },
         Object::Integer(i) => eval_block(positive),
+        Object::Error(m) => Error(m),
         _ => Object::Null,
     }
 }
@@ -116,6 +120,9 @@ fn eval_block(block: &StatementBlock) -> Object {
         if matches!(result, Object::Return(_)) {
             return result;
         }
+        if matches!(result, Object::Error(_)) {
+            return result;
+        }
     }
     return result;
 }
@@ -124,7 +131,7 @@ fn eval_binary_bool(op: &BinaryOp, l: Booleans, r: Booleans) -> Object {
     match op {
         BinaryOp::OpEquals => as_boolean(l == r),
         BinaryOp::OpDiffers => as_boolean(l != r),
-        _ => Object::Null,
+        op => Error(format!("Unknown operator: {:?} {:?} {:?}", l, op, r)),
     }
 }
 
@@ -134,7 +141,7 @@ fn eval_binary_int(op: &BinaryOp, l: i32, r: i32) -> Object {
         BinaryOp::OpMinus => Object::Integer(l - r),
         BinaryOp::OpTimes => Object::Integer(l * r),
         BinaryOp::OpDiv => match r {
-            0 => Object::Null,
+            0 => Object::Error("Cannot divide by 0".to_owned()),
             _ => Object::Integer(l / r),
         },
 
@@ -184,7 +191,10 @@ mod tests {
         assert_eq!(eval_source("-5"), Object::Integer(-5));
         assert_eq!(eval_source("!-5"), Object::Boolean(Booleans::False));
         assert_eq!(eval_source("!!-5"), Object::Boolean(Booleans::True));
-        assert_eq!(eval_source("-true"), Object::Null);
+        assert_eq!(
+            eval_source("-true"),
+            Error("Unknown operator: -Boolean(True)".to_owned())
+        );
     }
 
     #[test]
@@ -193,7 +203,7 @@ mod tests {
         assert_eq!(eval_source("5 - 5"), Object::Integer(0));
         assert_eq!(eval_source("5 * 5"), Object::Integer(25));
         assert_eq!(eval_source("5 / 5"), Object::Integer(1));
-        assert_eq!(eval_source("5 / 0"), Object::Null);
+        assert_eq!(eval_source("5 / 0"), Error("Cannot divide by 0".to_owned()));
 
         assert_eq!(eval_source("5 > 5"), Object::Boolean(Booleans::False));
         assert_eq!(eval_source("5 < 5"), Object::Boolean(Booleans::False));
@@ -262,7 +272,8 @@ mod tests {
 
     #[test]
     fn returns() {
-        // assert_eq!(eval_source("9; return 2 * 5; 9;"), Object::Integer(10));
+        assert_eq!(eval_source("9; return 2 * 5; 9;"), Object::Integer(10));
+
         assert_eq!(
             eval_source(
                 "
@@ -275,6 +286,33 @@ mod tests {
         }"
             ),
             Object::Integer(10)
+        );
+    }
+
+    #[test]
+    fn errors() {
+        assert_eq!(
+            eval_source("5 + true"),
+            Object::Error("Unknown operator: Integer(5) OpPlus Boolean(True)".to_owned())
+        );
+        assert_eq!(
+            eval_source("5 + true; 5"),
+            Object::Error("Unknown operator: Integer(5) OpPlus Boolean(True)".to_owned())
+        );
+        assert_eq!(
+            eval_source("-true"),
+            Object::Error("Unknown operator: -Boolean(True)".to_owned())
+        );
+        assert_eq!(
+            eval_source(
+                "if (10 > 1) {
+                                        if (10 > 1) {
+                                            return true * false;
+                                        }
+                                        return 1;
+                                    }"
+            ),
+            Object::Error("Unknown operator: True OpTimes False".to_owned())
         );
     }
 }
