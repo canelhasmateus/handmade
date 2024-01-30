@@ -2,6 +2,7 @@
 
 mod eval;
 mod lexer;
+mod lexer2;
 mod parser;
 
 fn main() {}

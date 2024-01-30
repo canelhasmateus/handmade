@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::ops::Deref;
 
 use crate::eval::Object::Error;
+use crate::parser::StatementKind::EndStatement;
 use crate::parser::{
     BinaryOp, Expression, ExpressionKind, Parser, StatementBlock, StatementKind, UnaryOp,
 };
-use crate::parser::StatementKind::EndStatement;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 enum Object {
@@ -42,10 +42,8 @@ impl Environment {
 impl VM {
     fn new() -> VM {
         return VM {
-            env: Environment {
-                bindings: HashMap::<String, Object>::new()
-            }
-        }
+            env: Environment { bindings: HashMap::<String, Object>::new() },
+        };
     }
     fn eval_source(&mut self, str: &str) -> Object {
         let parser = Parser::from(str);
@@ -80,17 +78,17 @@ impl VM {
             StatementKind::ReturnStmt { expr } => {
                 Object::Return(Box::from(self.eval_expression(&expr.kind)))
             }
-            StatementKind::LetStmt { name, expr } => {
-                match self.eval_expression(&expr.kind) {
-                    e @ Error(_) => e,
-                    Object::Return(_) => Error("let return is not valid".to_owned()),
-                    obj => {
-                        self.env.add(name, obj.clone());
-                        obj
-                    }
+            StatementKind::LetStmt { name, expr } => match self.eval_expression(&expr.kind) {
+                e @ Error(_) => e,
+                Object::Return(_) => Error("let return is not valid".to_owned()),
+                obj => {
+                    self.env.add(name, obj.clone());
+                    obj
                 }
             },
-            StatementKind::IllegalStatement { expr } => Error(format!("Illegal Statement: {:?}", expr)),
+            StatementKind::IllegalStatement { expr } => {
+                Error(format!("Illegal Statement: {:?}", expr))
+            }
             EndStatement => todo!(),
         }
     }
@@ -115,11 +113,14 @@ impl VM {
             ExpressionKind::LiteralFunction { .. } => todo!(),
             ExpressionKind::Identifier { name } => match self.env.get(name) {
                 None => Error(format!("Unknown identifier {:?}", name)),
-                Some(expr) => expr.clone()
-            }
+                Some(expr) => expr.clone(),
+            },
 
             ExpressionKind::Binary { op, left, right } => {
-                match (self.eval_expression(&left.kind), self.eval_expression(&right.kind)) {
+                match (
+                    self.eval_expression(&left.kind),
+                    self.eval_expression(&right.kind),
+                ) {
                     (Object::Integer(l), Object::Integer(r)) => self.eval_binary_int(op, l, r),
                     (Object::Boolean(l), Object::Boolean(r)) => self.eval_binary_bool(op, l, r),
                     (l, r) => Error(format!("Unknown operator: {:?} {:?} {:?}", l, op, r)),
@@ -248,7 +249,10 @@ mod tests {
         assert_eq!(vm.eval_source("5 - 5"), Object::Integer(0));
         assert_eq!(vm.eval_source("5 * 5"), Object::Integer(25));
         assert_eq!(vm.eval_source("5 / 5"), Object::Integer(1));
-        assert_eq!(vm.eval_source("5 / 0"), Error("Cannot divide by 0".to_owned()));
+        assert_eq!(
+            vm.eval_source("5 / 0"),
+            Error("Cannot divide by 0".to_owned())
+        );
 
         assert_eq!(vm.eval_source("5 > 5"), Object::Boolean(Booleans::False));
         assert_eq!(vm.eval_source("5 < 5"), Object::Boolean(Booleans::False));
@@ -264,7 +268,10 @@ mod tests {
     #[test]
     fn bool_binaries() {
         let mut vm = VM::new();
-        assert_eq!(vm.eval_source("true == true"), Object::Boolean(Booleans::True));
+        assert_eq!(
+            vm.eval_source("true == true"),
+            Object::Boolean(Booleans::True)
+        );
         assert_eq!(
             vm.eval_source("true == false"),
             Object::Boolean(Booleans::False)
@@ -368,14 +375,8 @@ mod tests {
     #[test]
     fn bindings() {
         let mut vm = VM::new();
-        assert_eq!(
-            vm.eval_source("let a = 5; a;"),
-            Object::Integer(5)
-        );
-        assert_eq!(
-            vm.eval_source("let a = 5 * 5; a;"),
-            Object::Integer(25)
-        );
+        assert_eq!(vm.eval_source("let a = 5; a;"), Object::Integer(5));
+        assert_eq!(vm.eval_source("let a = 5 * 5; a;"), Object::Integer(25));
         assert_eq!(
             vm.eval_source("let a = 5; let b = a; b"),
             Object::Integer(5)
@@ -389,5 +390,4 @@ mod tests {
             Object::Error("Unknown identifier \"foobar\"".to_owned())
         );
     }
-
 }
