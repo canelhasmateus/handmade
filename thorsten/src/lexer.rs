@@ -10,14 +10,14 @@ pub struct Span {
     pub end: usize,
 }
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub struct Token<'a> {
-    pub kind: TokenKind<'a>,
+#[derive(Debug, Eq, PartialEq,  Clone)]
+pub struct Token {
+    pub kind: TokenKind,
     pub span: Span,
 }
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-pub enum TokenKind<'a> {
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum TokenKind {
     Eof,
 
     Bang,
@@ -51,20 +51,20 @@ pub enum TokenKind<'a> {
     Else,
     Return,
 
-    Ident { name: &'a str },
+    Ident { name: String },
     Int { value: i32 },
 
-    Illegal { value: &'a str },
-    Blank { value: &'a str },
+    Illegal { value: String },
+    Blank { value: String },
 }
 
 #[derive(Eq, PartialEq)]
-pub struct Lexer<'a> {
-    input: &'a str,
+pub struct Lexer {
+    input: String,
     pub position: RefCell<usize>,
 }
 
-impl Lexer<'_> {
+impl Lexer {
     pub fn slice(&self, span: &Span) -> &str {
         return &self.input[span.start..span.end];
     }
@@ -150,13 +150,13 @@ impl Lexer<'_> {
     }
 }
 
-impl Token<'_> {
+impl Token {
     pub fn len(&self) -> usize {
         return self.kind.len();
     }
 }
 
-impl TokenKind<'_> {
+impl TokenKind {
     pub fn len(&self) -> usize {
         return match &self {
             TokenKind::Eof => 0,
@@ -175,9 +175,9 @@ impl TokenKind<'_> {
     }
 }
 
-impl<'a> From<&'a str> for Lexer<'a> {
+impl<'a> From<&'a str> for Lexer {
     fn from(value: &'a str) -> Self {
-        return Lexer { input: value, position: 0.into() };
+        return Lexer { input: value.into(), position: 0.into() };
     }
 }
 

@@ -7,8 +7,8 @@ use TokenKind::{
     True,
 };
 
-use crate::lexer::TokenKind::{Function, If, Semicolon};
 use crate::lexer::{Lexer, Span, Token, TokenKind};
+use crate::lexer::TokenKind::{Function, If, Semicolon};
 use crate::parser::ExpressionKind::{Binary, Call, Conditional};
 use crate::parser::ExpressionPrecedence::{
     Apply, Equals, LesserGreater, Lowest, Prefix, Product, Sum,
@@ -16,33 +16,33 @@ use crate::parser::ExpressionPrecedence::{
 use crate::parser::StatementKind::{EndStatement, ExprStmt};
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Statement<'a> {
+pub struct Statement {
     pub span: Span,
-    pub kind: StatementKind<'a>,
+    pub kind: StatementKind,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Expression<'a> {
+pub struct Expression {
     pub span: Span,
-    pub kind: ExpressionKind<'a>,
+    pub kind: ExpressionKind,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum StatementKind<'a> {
-    LetStmt { name: &'a str, expr: Expression<'a> },
-    ReturnStmt { expr: Expression<'a> },
-    ExprStmt { expr: Expression<'a> },
-    IllegalStatement { expr: Expression<'a> },
+pub enum StatementKind {
+    LetStmt { name: String, expr: Expression },
+    ReturnStmt { expr: Expression },
+    ExprStmt { expr: Expression },
+    IllegalStatement { expr: Expression },
     EndStatement,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct StatementBlock<'a> {
+pub struct StatementBlock {
     pub span: Span,
-    pub statements: Vec<Box<Statement<'a>>>,
+    pub statements: Vec<Box<Statement>>,
 }
 #[derive(Debug, PartialEq, Eq)]
-pub enum ExpressionKind<'a> {
+pub enum ExpressionKind {
     LiteralInteger {
         value: i32,
     },
@@ -50,32 +50,32 @@ pub enum ExpressionKind<'a> {
         value: bool,
     },
     LiteralFunction {
-        parameters: Vec<&'a str>,
-        body: StatementBlock<'a>,
+        parameters: Vec<String>,
+        body: StatementBlock,
     },
     Identifier {
-        name: &'a str,
+        name: String,
     },
     Unary {
         op: UnaryOp,
-        expr: Box<Expression<'a>>,
+        expr: Box<Expression>,
     },
     Binary {
         op: BinaryOp,
-        left: Box<Expression<'a>>,
-        right: Box<Expression<'a>>,
+        left: Box<Expression>,
+        right: Box<Expression>,
     },
     Conditional {
-        condition: Box<Expression<'a>>,
-        positive: StatementBlock<'a>,
-        negative: Option<StatementBlock<'a>>,
+        condition: Box<Expression>,
+        positive: StatementBlock,
+        negative: Option<StatementBlock>,
     },
     Call {
-        function: Box<Expression<'a>>,
-        arguments: Vec<Box<Expression<'a>>>,
+        function: Box<Expression>,
+        arguments: Vec<Box<Expression>>,
     },
     IllegalExpression {
-        value: &'a str,
+        value: String,
     },
 }
 
@@ -108,11 +108,11 @@ pub enum ExpressionPrecedence {
     Apply,
 }
 
-pub struct Parser<'a> {
-    lexer: Lexer<'a>,
+pub struct Parser {
+    lexer: Lexer,
 }
 
-impl Parser<'_> {
+impl Parser {
     pub fn statement_after(&self, span: &Span) -> Statement {
         let current = self.lexer.semantic_token_after(span);
         let mut statement = match current.kind {
@@ -171,7 +171,7 @@ impl Parser<'_> {
 
             Function => {
                 let lp = self.lexer.semantic_token_after(&initial.span);
-                let mut params: Vec<&str> = vec![];
+                let mut params: Vec<String> = vec![];
                 let mut current = self.lexer.semantic_token_after(&lp.span);
                 loop {
                     match current {
@@ -185,7 +185,7 @@ impl Parser<'_> {
                                 _ => Expression {
                                     span: Span { start: current.span.end, end: current.span.end },
                                     kind: IllegalExpression {
-                                        value: "expected statement block after function parameters",
+                                        value: "expected statement block after function parameters".into(),
                                     },
                                 },
                             };
@@ -353,13 +353,13 @@ impl Parser<'_> {
     }
 }
 
-impl<'a> From<&'a str> for Parser<'a> {
+impl<'a> From<&'a str> for Parser {
     fn from(value: &'a str) -> Self {
         return Parser { lexer: Lexer::from(value) };
     }
 }
 
-impl TryFrom<&Token<'_>> for UnaryOp {
+impl TryFrom<&Token> for UnaryOp {
     type Error = ();
 
     fn try_from(value: &Token) -> Result<Self, Self::Error> {
@@ -371,7 +371,7 @@ impl TryFrom<&Token<'_>> for UnaryOp {
     }
 }
 
-impl From<&Token<'_>> for ExpressionPrecedence {
+impl From<&Token> for ExpressionPrecedence {
     fn from(value: &Token) -> Self {
         match value.kind {
             TokenKind::Plus | Minus => Sum,
@@ -384,7 +384,7 @@ impl From<&Token<'_>> for ExpressionPrecedence {
     }
 }
 
-impl TryFrom<&Token<'_>> for BinaryOp {
+impl TryFrom<&Token> for BinaryOp {
     type Error = ();
 
     fn try_from(value: &Token) -> Result<Self, Self::Error> {
@@ -1272,7 +1272,7 @@ mod tests {
                     expr: Expression {
                         span: Span { start: 9, end: 27 },
                         kind: LiteralFunction {
-                            parameters: vec!("x", "y"),
+                            parameters: vec!("x".into(), "y".into()),
                             body: StatementBlock {
                                 span: Span { start: 18, end: 27 },
                                 statements: vec!(Box::from(Statement {
@@ -1284,11 +1284,11 @@ mod tests {
                                                 op: OpPlus,
                                                 left: Box::from(Expression {
                                                     span: Span { start: 20, end: 21 },
-                                                    kind: Identifier { name: "x" },
+                                                    kind: Identifier { name: "x".into() },
                                                 }),
                                                 right: Box::from(Expression {
                                                     span: Span { start: 24, end: 25 },
-                                                    kind: Identifier { name: "y" },
+                                                    kind: Identifier { name: "y".into() },
                                                 }),
                                             },
                                         }
@@ -1321,7 +1321,7 @@ mod tests {
                         kind: Call {
                             function: Box::from(Expression {
                                 span: Span { start: 9, end: 12 },
-                                kind: Identifier { name: "add" },
+                                kind: Identifier { name: "add".into() },
                             }),
                             arguments: vec!(
                                 Box::from(Expression {
