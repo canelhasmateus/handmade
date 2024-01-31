@@ -190,7 +190,10 @@ impl VM {
                         for (k, v) in zip(f.parameters, args) {
                             fenv.add(k, v);
                         }
-                        self.eval_block(&f.body, &fenv)
+                        match self.eval_block(&f.body, &fenv) {
+                            Object::Return(o) => *o,
+                            e => e
+                        }
                     }
                     o @ Error { .. } => return o,
                     o => return Error(format!("expected function, got {:?}", o)),
@@ -534,12 +537,12 @@ mod tests {
             assert_eq!(vm.eval_source("fn(x) { x; }(5)"), Object::Integer(5))
         }
 
-        // {
-        //     let vm = VM::new();
-        //     assert_eq!(
-        //         vm.eval_source("let factorial = fn(x) { if ( x == 1 ) { return 1 } else { return x * factorial( x - 1 )} }; factorial( 5 );"),
-        //         Object::Integer(20)
-        //     )
-        // }
+        {
+            let vm = VM::new();
+            assert_eq!(
+                vm.eval_source("let factorial = fn(x) { if ( x == 1 ) { return 1 } else { return x * factorial( x - 1 )} }; factorial( 5 );"),
+                Object::Integer(120)
+            )
+        }
     }
 }
