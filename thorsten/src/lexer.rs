@@ -10,7 +10,7 @@ pub struct Span {
     pub end: usize,
 }
 
-#[derive(Debug, Eq, PartialEq,  Clone)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Token {
     pub kind: TokenKind,
     pub span: Span,

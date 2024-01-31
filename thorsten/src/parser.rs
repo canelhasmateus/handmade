@@ -7,27 +7,27 @@ use TokenKind::{
     True,
 };
 
-use crate::lexer::{Lexer, Span, Token, TokenKind};
 use crate::lexer::TokenKind::{Function, If, Semicolon};
+use crate::lexer::{Lexer, Span, Token, TokenKind};
 use crate::parser::ExpressionKind::{Binary, Call, Conditional};
 use crate::parser::ExpressionPrecedence::{
     Apply, Equals, LesserGreater, Lowest, Prefix, Product, Sum,
 };
 use crate::parser::StatementKind::{EndStatement, ExprStmt};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Statement {
     pub span: Span,
     pub kind: StatementKind,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Expression {
     pub span: Span,
     pub kind: ExpressionKind,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum StatementKind {
     LetStmt { name: String, expr: Expression },
     ReturnStmt { expr: Expression },
@@ -36,12 +36,12 @@ pub enum StatementKind {
     EndStatement,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StatementBlock {
     pub span: Span,
     pub statements: Vec<Box<Statement>>,
 }
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ExpressionKind {
     LiteralInteger {
         value: i32,
@@ -79,13 +79,13 @@ pub enum ExpressionKind {
     },
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum UnaryOp {
     OpNot,
     OpNeg,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum BinaryOp {
     OpPlus,
     OpMinus,
@@ -185,7 +185,8 @@ impl Parser {
                                 _ => Expression {
                                     span: Span { start: current.span.end, end: current.span.end },
                                     kind: IllegalExpression {
-                                        value: "expected statement block after function parameters".into(),
+                                        value: "expected statement block after function parameters"
+                                            .into(),
                                     },
                                 },
                             };
