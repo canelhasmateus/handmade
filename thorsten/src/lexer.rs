@@ -54,6 +54,7 @@ pub enum TokenKind {
     Ident { name: String },
     Int { value: i32 },
 
+    Str { value: String },
     Illegal { value: String },
     Blank { value: String },
 }
@@ -101,7 +102,21 @@ impl Lexer {
                 '=' => Equals,
                 _ => Assign,
             },
+            '"' => {
+                let mut last = '"';
+                let mut count = 1;
+                for x in rest.chars().skip(1) {
+                    if last != '\\' {
+                        if x == '"' {
+                            break;
+                        }
+                    }
+                    last = x;
+                    count += 1;
+                }
 
+                TokenKind::Str { value: rest[1..count].into() }
+            }
             _ => match contiguous(rest) {
                 (DIGIT, content) => TokenKind::Int { value: content.parse::<i32>().unwrap() },
                 (WHITESPACE, content) => TokenKind::Blank { value: content.into() },
@@ -166,6 +181,7 @@ impl TokenKind {
             TokenKind::False => 5,
             TokenKind::Return => 6,
 
+            TokenKind::Str { value } => 2 + value.len(),
             TokenKind::Ident { name } => name.len(),
             TokenKind::Int { value } => value.to_string().len(),
             TokenKind::Illegal { value } => value.len(),
@@ -449,5 +465,37 @@ mod tests {
         assert_eq!(lexer.next_semantic().kind, TokenKind::False);
 
         assert_eq!(lexer.next_semantic().kind, TokenKind::Eof);
+    }
+
+    #[test]
+    fn strings() {
+        let source = r#"
+        let a = "hey there"
+        let b = "hey \"you\" there"
+        "#;
+
+        let lexer = Lexer::from(source);
+
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Let);
+        assert_eq!(
+            lexer.next_semantic().kind,
+            TokenKind::Ident { name: "a".into() }
+        );
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Assign);
+        assert_eq!(
+            lexer.next_semantic().kind,
+            TokenKind::Str { value: "hey there".into() }
+        );
+
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Let);
+        assert_eq!(
+            lexer.next_semantic().kind,
+            TokenKind::Ident { name: "b".into() }
+        );
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Assign);
+        assert_eq!(
+            lexer.next_semantic().kind,
+            TokenKind::Str { value: "hey \\\"you\\\" there".into() }
+        );
     }
 }

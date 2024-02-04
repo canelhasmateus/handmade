@@ -7,9 +7,9 @@ use TokenKind::{
     True,
 };
 
-use crate::lexer::TokenKind::{Function, If, Semicolon};
+use crate::lexer::TokenKind::{Function, If, Semicolon, Str};
 use crate::lexer::{Lexer, Span, Token, TokenKind};
-use crate::parser::ExpressionKind::{Binary, Call, Conditional};
+use crate::parser::ExpressionKind::{Binary, Call, Conditional, LiteralString};
 use crate::parser::ExpressionPrecedence::{
     Apply, Equals, LesserGreater, Lowest, Prefix, Product, Sum,
 };
@@ -45,6 +45,9 @@ pub struct StatementBlock {
 pub enum ExpressionKind {
     LiteralInteger {
         value: i32,
+    },
+    LiteralString {
+        value: String,
     },
     LiteralBoolean {
         value: bool,
@@ -168,6 +171,7 @@ impl Parser {
             Int { value } => Expression { span: initial.span, kind: LiteralInteger { value } },
 
             Ident { name } => Expression { span: initial.span, kind: Identifier { name } },
+            Str { value } => Expression { span: initial.span, kind: LiteralString { value } },
 
             Function => {
                 let lp = self.lexer.semantic_token_after(&initial.span);
@@ -406,7 +410,7 @@ impl TryFrom<&Token> for BinaryOp {
 #[cfg(test)]
 mod tests {
     use crate::parser::BinaryOp::{OpLesser, OpPlus, OpTimes};
-    use crate::parser::ExpressionKind::{Conditional, LiteralFunction};
+    use crate::parser::ExpressionKind::{Conditional, LiteralFunction, LiteralString};
     use crate::parser::Parser;
     use crate::parser::StatementKind::LetStmt;
 
@@ -1359,6 +1363,29 @@ mod tests {
                                 }),
                             ),
                         },
+                    },
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn string_expression() {
+        let input = r#"
+        "Hello World"
+        "#;
+
+        let parser = Parser::from(input);
+
+        assert_eq!(&input[9..22], r#""Hello World""#);
+        assert_eq!(
+            parser.next_statement(),
+            Statement {
+                span: Span { start: 9, end: 22 },
+                kind: ExprStmt {
+                    expr: Expression {
+                        span: Span { start: 9, end: 22 },
+                        kind: LiteralString { value: "Hello World".to_string() },
                     },
                 },
             }

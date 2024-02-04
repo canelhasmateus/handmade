@@ -14,6 +14,7 @@ use crate::parser::{
 enum Object {
     Integer(i32),
     Boolean(Booleans),
+    Str(String),
     Null,
     Return(Box<Object>),
     Error(String),
@@ -134,6 +135,7 @@ impl VM {
     fn eval_expression(&self, expr: &ExpressionKind, env: &Environment) -> Object {
         match expr {
             ExpressionKind::LiteralInteger { value } => Object::Integer(*value),
+            ExpressionKind::LiteralString { value } => Object::Str(value.clone()),
             ExpressionKind::LiteralBoolean { value } => as_boolean(*value),
             ExpressionKind::Unary { op, expr } => match (op, &expr.kind) {
                 (UnaryOp::OpNot, k) => match self.eval_expression(k, env) {
@@ -165,6 +167,7 @@ impl VM {
                 ) {
                     (Object::Integer(l), Object::Integer(r)) => self.eval_binary_int(op, l, r),
                     (Object::Boolean(l), Object::Boolean(r)) => self.eval_binary_bool(op, l, r),
+                    (Object::Str(l), Object::Str(r)) => self.eval_binary_str(op, &l, &r),
                     (l, r) => Error(format!("Unknown operator: {:?} {:?} {:?}", l, op, r)),
                 }
             }
@@ -192,7 +195,7 @@ impl VM {
                         }
                         match self.eval_block(&f.body, &fenv) {
                             Object::Return(o) => *o,
-                            e => e
+                            e => e,
                         }
                     }
                     o @ Error { .. } => return o,
@@ -236,6 +239,13 @@ impl VM {
             }
         }
         return result;
+    }
+
+    fn eval_binary_str(&self, op: &BinaryOp, l: &str, r: &str) -> Object {
+        return match op {
+            BinaryOp::OpPlus => Object::Str(format!("{l}{r}")),
+            op => Error(format!("Unknown operator: {:?} {:?} {:?}", l, op, r)),
+        };
     }
 
     fn eval_binary_bool(&self, op: &BinaryOp, l: Booleans, r: Booleans) -> Object {
@@ -543,6 +553,30 @@ mod tests {
                 vm.eval_source("let factorial = fn(x) { if ( x == 1 ) { return 1 } else { return x * factorial( x - 1 )} }; factorial( 5 );"),
                 Object::Integer(120)
             )
+        }
+        {
+            let vm = VM::new();
+            assert_eq!(
+                vm.eval_source("let myFun = fn( a ) { return fn( b ) { b * a } }; myFun(2)(3) "),
+                Object::Integer(6)
+            )
+        }
+    }
+
+    #[test]
+    fn strings() {
+        {
+            let vm = VM::new();
+            assert_eq!(
+                vm.eval_source(
+                    "
+                let hello = \"Hello \";
+                let world = \"World\";
+                hello + world
+                 "
+                ),
+                Object::Str("Hello World".into())
+            );
         }
     }
 }
