@@ -314,197 +314,164 @@ mod tests {
 
     use super::*;
 
+    fn evaluate(s: &str) -> Object {
+        let vm = VM::new();
+        return vm.eval_source(s);
+    }
     #[test]
     fn literal_int() {
-        let vm = VM::new();
         let input = "10";
-        let result = vm.eval_source(input);
-        assert_eq!(result, Object::Integer(10))
+        assert_eq!(evaluate(input), Object::Integer(10))
     }
 
     #[test]
     fn literal_bool() {
-        let vm = VM::new();
         let input = "true";
-        let result = vm.eval_source(input);
-
-        assert_eq!(result, Object::Boolean(Booleans::True));
+        assert_eq!(evaluate(input), Object::Boolean(Booleans::True));
     }
 
     #[test]
     fn unaries() {
-        let vm = VM::new();
-        assert_eq!(vm.eval_source("!5"), Object::Boolean(Booleans::False));
-        assert_eq!(vm.eval_source("!true"), Object::Boolean(Booleans::False));
-        assert_eq!(vm.eval_source("!!false"), Object::Boolean(Booleans::False));
+        assert_eq!(evaluate("!5"), Object::Boolean(Booleans::False));
+        assert_eq!(evaluate("!true"), Object::Boolean(Booleans::False));
+        assert_eq!(evaluate("!!false"), Object::Boolean(Booleans::False));
 
-        assert_eq!(vm.eval_source("!!5"), Object::Boolean(Booleans::True));
-        assert_eq!(vm.eval_source("!false"), Object::Boolean(Booleans::True));
-        assert_eq!(vm.eval_source("!!true"), Object::Boolean(Booleans::True));
+        assert_eq!(evaluate("!!5"), Object::Boolean(Booleans::True));
+        assert_eq!(evaluate("!false"), Object::Boolean(Booleans::True));
+        assert_eq!(evaluate("!!true"), Object::Boolean(Booleans::True));
 
-        assert_eq!(vm.eval_source("-5"), Object::Integer(-5));
-        assert_eq!(vm.eval_source("!-5"), Object::Boolean(Booleans::False));
-        assert_eq!(vm.eval_source("!!-5"), Object::Boolean(Booleans::True));
+        assert_eq!(evaluate("-5"), Object::Integer(-5));
+        assert_eq!(evaluate("!-5"), Object::Boolean(Booleans::False));
+        assert_eq!(evaluate("!!-5"), Object::Boolean(Booleans::True));
         assert_eq!(
-            vm.eval_source("-true"),
+            evaluate("-true"),
             Error("Unknown operator: -Boolean(True)".to_owned())
         );
     }
 
     #[test]
     fn int_binaries() {
-        let vm = VM::new();
-        assert_eq!(vm.eval_source("5 + 5"), Object::Integer(10));
-        assert_eq!(vm.eval_source("5 - 5"), Object::Integer(0));
-        assert_eq!(vm.eval_source("5 * 5"), Object::Integer(25));
-        assert_eq!(vm.eval_source("5 / 5"), Object::Integer(1));
-        assert_eq!(
-            vm.eval_source("5 / 0"),
-            Error("Cannot divide by 0".to_owned())
-        );
+        assert_eq!(evaluate("5 + 5"), Object::Integer(10));
+        assert_eq!(evaluate("5 - 5"), Object::Integer(0));
+        assert_eq!(evaluate("5 * 5"), Object::Integer(25));
+        assert_eq!(evaluate("5 / 5"), Object::Integer(1));
+        assert_eq!(evaluate("5 / 0"), Error("Cannot divide by 0".to_owned()));
 
-        assert_eq!(vm.eval_source("5 > 5"), Object::Boolean(Booleans::False));
-        assert_eq!(vm.eval_source("5 < 5"), Object::Boolean(Booleans::False));
-        assert_eq!(vm.eval_source("5 != 5"), Object::Boolean(Booleans::False));
-        assert_eq!(vm.eval_source("5 == 5"), Object::Boolean(Booleans::True));
+        assert_eq!(evaluate("5 > 5"), Object::Boolean(Booleans::False));
+        assert_eq!(evaluate("5 < 5"), Object::Boolean(Booleans::False));
+        assert_eq!(evaluate("5 != 5"), Object::Boolean(Booleans::False));
+        assert_eq!(evaluate("5 == 5"), Object::Boolean(Booleans::True));
 
         assert_eq!(
-            vm.eval_source("(5 + 10 * 2 + 15 / 3 ) * 2 + -10"),
+            evaluate("(5 + 10 * 2 + 15 / 3 ) * 2 + -10"),
             Object::Integer(50)
         );
     }
 
     #[test]
     fn bool_binaries() {
-        let vm = VM::new();
+        assert_eq!(evaluate("true == true"), Object::Boolean(Booleans::True));
+        assert_eq!(evaluate("true == false"), Object::Boolean(Booleans::False));
+
+        assert_eq!(evaluate("true != true"), Object::Boolean(Booleans::False));
+        assert_eq!(evaluate("true != false"), Object::Boolean(Booleans::True));
+
+        assert_eq!(evaluate("(1 < 2) == true"), Object::Boolean(Booleans::True));
         assert_eq!(
-            vm.eval_source("true == true"),
-            Object::Boolean(Booleans::True)
-        );
-        assert_eq!(
-            vm.eval_source("true == false"),
+            evaluate("(1 < 2) == false"),
             Object::Boolean(Booleans::False)
         );
 
         assert_eq!(
-            vm.eval_source("true != true"),
+            evaluate("(1 > 2) == true"),
             Object::Boolean(Booleans::False)
         );
         assert_eq!(
-            vm.eval_source("true != false"),
-            Object::Boolean(Booleans::True)
-        );
-
-        assert_eq!(
-            vm.eval_source("(1 < 2) == true"),
-            Object::Boolean(Booleans::True)
-        );
-        assert_eq!(
-            vm.eval_source("(1 < 2) == false"),
-            Object::Boolean(Booleans::False)
-        );
-
-        assert_eq!(
-            vm.eval_source("(1 > 2) == true"),
-            Object::Boolean(Booleans::False)
-        );
-        assert_eq!(
-            vm.eval_source("(1 > 2) == false"),
+            evaluate("(1 > 2) == false"),
             Object::Boolean(Booleans::True)
         );
     }
 
     #[test]
     fn conditionals() {
-        let vm = VM::new();
-        assert_eq!(vm.eval_source("if (true) { 10 }"), Object::Integer(10));
-        assert_eq!(vm.eval_source("if (false) { 10 }"), Object::Null);
-        assert_eq!(vm.eval_source("if (1) { 10 }"), Object::Integer(10));
-        assert_eq!(vm.eval_source("if (1 < 2 ) { 10 }"), Object::Integer(10));
-        assert_eq!(vm.eval_source("if (1 > 2 ) { 10 }"), Object::Null);
+        assert_eq!(evaluate("if (true) { 10 }"), Object::Integer(10));
+        assert_eq!(evaluate("if (false) { 10 }"), Object::Null);
+        assert_eq!(evaluate("if (1) { 10 }"), Object::Integer(10));
+        assert_eq!(evaluate("if (1 < 2 ) { 10 }"), Object::Integer(10));
+        assert_eq!(evaluate("if (1 > 2 ) { 10 }"), Object::Null);
 
         assert_eq!(
-            vm.eval_source("if (1 > 2 ) { 10 } else { 20 }"),
+            evaluate("if (1 > 2 ) { 10 } else { 20 }"),
             Object::Integer(20)
         );
         assert_eq!(
-            vm.eval_source("if (1 < 2 ) { 10 } else { 20 }"),
+            evaluate("if (1 < 2 ) { 10 } else { 20 }"),
             Object::Integer(10)
         );
     }
 
     #[test]
     fn returns() {
-        let vm = VM::new();
-        assert_eq!(vm.eval_source("9; return 2 * 5; 9;"), Object::Integer(10));
+        assert_eq!(evaluate("9; return 2 * 5; 9;"), Object::Integer(10));
 
-        assert_eq!(
-            vm.eval_source(
-                "
+        let source = "
         if (10 > 1) {
             if (10 > 1) {
                 return 10;
             }
 
             return 1;
-        }"
-            ),
-            Object::Integer(10)
-        );
+        }";
+        assert_eq!(evaluate(source), Object::Integer(10));
     }
 
     #[test]
     fn errors() {
-        let vm = VM::new();
         assert_eq!(
-            vm.eval_source("5 + true"),
+            evaluate("5 + true"),
             Object::Error("Unknown operator: Integer(5) OpPlus Boolean(True)".to_owned())
         );
         assert_eq!(
-            vm.eval_source("5 + true; 5"),
+            evaluate("5 + true; 5"),
             Object::Error("Unknown operator: Integer(5) OpPlus Boolean(True)".to_owned())
         );
         assert_eq!(
-            vm.eval_source("-true"),
+            evaluate("-true"),
             Object::Error("Unknown operator: -Boolean(True)".to_owned())
         );
+
+        let source = "
+        if (10 > 1) {
+            if (10 > 1) {
+                return true * false;
+            }
+            return 1;
+        }";
         assert_eq!(
-            vm.eval_source(
-                "if (10 > 1) {
-                                        if (10 > 1) {
-                                            return true * false;
-                                        }
-                                        return 1;
-                                    }"
-            ),
+            evaluate(source),
             Object::Error("Unknown operator: True OpTimes False".to_owned())
         );
     }
 
     #[test]
     fn bindings() {
-        let vm = VM::new();
-        assert_eq!(vm.eval_source("let a = 5; a;"), Object::Integer(5));
-        assert_eq!(vm.eval_source("let a = 5 * 5; a;"), Object::Integer(25));
+        assert_eq!(evaluate("let a = 5; a;"), Object::Integer(5));
+        assert_eq!(evaluate("let a = 5 * 5; a;"), Object::Integer(25));
+        assert_eq!(evaluate("let a = 5; let b = a; b"), Object::Integer(5));
         assert_eq!(
-            vm.eval_source("let a = 5; let b = a; b"),
-            Object::Integer(5)
-        );
-        assert_eq!(
-            vm.eval_source("let a = 5; let b = a; let c = a + b + 5; c;"),
+            evaluate("let a = 5; let b = a; let c = a + b + 5; c;"),
             Object::Integer(15)
         );
         assert_eq!(
-            vm.eval_source("foobar"),
+            evaluate("foobar"),
             Object::Error("Unknown identifier \"foobar\"".to_owned())
         );
     }
 
     #[test]
     fn functions() {
-        let vm = VM::new();
         assert_eq!(
-            vm.eval_source("fn(x) { x + 2; };"),
+            evaluate("fn(x) { x + 2; };"),
             Object::Function(Function {
                 parameters: vec!("x".into()),
                 env: Environment::extend(&Environment::new()),
@@ -539,101 +506,66 @@ mod tests {
 
     #[test]
     fn calls() {
-        {
-            let vm = VM::new();
-            assert_eq!(
-                vm.eval_source("let identity = fn(x) { x; }; identity(5);"),
-                Object::Integer(5)
-            );
-        }
-        {
-            let vm = VM::new();
-            assert_eq!(
-                vm.eval_source("let double = fn(x) { x * 2; }; double(5);"),
-                Object::Integer(10)
-            )
-        }
-        {
-            let vm = VM::new();
-            assert_eq!(
-                vm.eval_source("let add = fn(x, y) { x + y; }; add(5, 5);"),
-                Object::Integer(10)
-            )
-        }
-        {
-            let vm = VM::new();
-            assert_eq!(
-                vm.eval_source("let add = fn(x, y) { x + y; }; add(5 + 5, add(5, 5));"),
-                Object::Integer(20)
-            )
-        }
-        {
-            let vm = VM::new();
-            assert_eq!(vm.eval_source("fn(x) { x; }(5)"), Object::Integer(5))
-        }
+        assert_eq!(
+            evaluate("let identity = fn(x) { x; }; identity(5);"),
+            Object::Integer(5)
+        );
 
-        {
-            let vm = VM::new();
-            assert_eq!(
-                vm.eval_source("let factorial = fn(x) { if ( x == 1 ) { return 1 } else { return x * factorial( x - 1 )} }; factorial( 5 );"),
+        assert_eq!(
+            evaluate("let double = fn(x) { x * 2; }; double(5);"),
+            Object::Integer(10)
+        );
+
+        assert_eq!(
+            evaluate("let add = fn(x, y) { x + y; }; add(5, 5);"),
+            Object::Integer(10)
+        );
+
+        assert_eq!(
+            evaluate("let add = fn(x, y) { x + y; }; add(5 + 5, add(5, 5));"),
+            Object::Integer(20)
+        );
+
+        assert_eq!(evaluate("fn(x) { x; }(5)"), Object::Integer(5));
+
+        assert_eq!(
+            evaluate("let factorial = fn(x) { if ( x == 1 ) { return 1 } else { return x * factorial( x - 1 )} }; factorial( 5 );"),
                 Object::Integer(120)
-            )
-        }
-        {
-            let vm = VM::new();
-            assert_eq!(
-                vm.eval_source("let myFun = fn( a ) { return fn( b ) { b * a } }; myFun(2)(3) "),
-                Object::Integer(6)
-            )
-        }
+        );
+
+        assert_eq!(
+            evaluate("let myFun = fn( a ) { return fn( b ) { b * a } }; myFun(2)(3) "),
+            Object::Integer(6)
+        )
     }
 
     #[test]
     fn strings() {
-        {
-            let vm = VM::new();
-            assert_eq!(
-                vm.eval_source(
-                    "
+        assert_eq!(
+            evaluate(
+                "
                 let hello = \"Hello \";
                 let world = \"World\";
                 hello + world
                  "
-                ),
-                Object::Str("Hello World".into())
-            );
-        }
+            ),
+            Object::Str("Hello World".into())
+        );
     }
 
     #[test]
     fn builtins() {
-        {
-            let vm = VM::new();
-            assert_eq!(vm.eval_source(r#"len("")"#), Object::Integer(0));
-        }
-        {
-            let vm = VM::new();
-            assert_eq!(vm.eval_source(r#"len("four")"#), Object::Integer(4));
-        }
-        {
-            let vm = VM::new();
-            assert_eq!(vm.eval_source(r#"len("hello world")"#), Object::Integer(11));
-        }
-        {
-            let vm = VM::new();
-            assert_eq!(
-                vm.eval_source(r#"len(1)"#),
-                Object::Error("Expected single Str arg, got [Integer(1)]".to_owned())
-            );
-        }
-        {
-            let vm = VM::new();
-            assert_eq!(
-                vm.eval_source(r#"len("one" , "two")"#),
-                Object::Error(
-                    "Expected single Str arg, got [Str(\"one\"), Str(\"two\")]".to_owned()
-                )
-            );
-        }
+        assert_eq!(evaluate(r#"len("")"#), Object::Integer(0));
+        assert_eq!(evaluate(r#"len("four")"#), Object::Integer(4));
+        assert_eq!(evaluate(r#"len("hello world")"#), Object::Integer(11));
+        assert_eq!(
+            evaluate(r#"len(1)"#),
+            Object::Error("Expected single Str arg, got [Integer(1)]".to_owned())
+        );
+
+        assert_eq!(
+            evaluate(r#"len("one" , "two")"#),
+            Object::Error("Expected single Str arg, got [Str(\"one\"), Str(\"two\")]".to_owned())
+        );
     }
 }
