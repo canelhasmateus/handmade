@@ -3,15 +3,15 @@ use ExpressionKind::{
 };
 use StatementKind::{IllegalStatement, LetStmt, ReturnStmt};
 use TokenKind::{
-    Assign, Bang, Else, Eof, False, Ident, Int, Lbrace, Let, Lparen, Minus, Rbrace, Return, Rparen,
-    True,
+    Assign, Bang, Else, Eof, False, Ident, Int, Lbrace, Lbracket, Let, Lparen, Minus, Rbrace,
+    Return, Rparen, True,
 };
 
-use crate::lexer::TokenKind::{Function, If, Semicolon, Str};
+use crate::lexer::TokenKind::{Function, If, Rbracket, Semicolon, Str};
 use crate::lexer::{Lexer, Span, Token, TokenKind};
-use crate::parser::ExpressionKind::{Binary, Call, Conditional, LiteralString};
+use crate::parser::ExpressionKind::{Binary, Call, Conditional, IndexExpression, LiteralString};
 use crate::parser::ExpressionPrecedence::{
-    Apply, Equals, LesserGreater, Lowest, Prefix, Product, Sum,
+    Apply, Equals, Index, LesserGreater, Lowest, Prefix, Product, Sum,
 };
 use crate::parser::StatementKind::{EndStatement, ExprStmt};
 
@@ -80,6 +80,10 @@ pub enum ExpressionKind {
         function: Box<Expression>,
         arguments: Vec<Box<Expression>>,
     },
+    IndexExpression {
+        left: Box<Expression>,
+        idx: Box<Expression>,
+    },
     IllegalExpression {
         value: String,
     },
@@ -112,6 +116,7 @@ pub enum ExpressionPrecedence {
     Product,
     Prefix,
     Apply,
+    Index,
 }
 
 pub struct Parser {
@@ -175,13 +180,6 @@ impl Parser {
 
             Ident { name } => Expression { span: initial.span, kind: Identifier { name } },
             Str { value } => Expression { span: initial.span, kind: LiteralString { value } },
-            TokenKind::Lbracket => {
-                let (args, end) = self.expression_list(&initial, TokenKind::Rbracket);
-                return Expression {
-                    kind: ExpressionKind::LiteralArray { values: args },
-                    span: Span { start: start.start, end: end.end },
-                };
-            }
             Function => {
                 let lp = self.lexer.semantic_token_after(&initial.span);
                 let mut params: Vec<String> = vec![];
@@ -276,6 +274,13 @@ impl Parser {
                     },
                 }
             }
+            Lbracket => {
+                let (args, end) = self.expression_list(&initial, TokenKind::Rbracket);
+                return Expression {
+                    kind: ExpressionKind::LiteralArray { values: args },
+                    span: Span { start: start.start, end: end.end },
+                };
+            }
 
             _ => Expression {
                 // todo: read until Semicolon
@@ -298,6 +303,20 @@ impl Parser {
                         span: Span { start: left.span.start, end: end.end },
                         kind: Call { function: Box::from(left), arguments: args },
                     }
+                }
+                Lbracket => {
+                    let idx = self.expression_after(&next_token.span, ExpressionPrecedence::Lowest);
+                    let after = self.lexer.semantic_token_after(&idx.span);
+                    if after.kind != Rbracket {
+                        return Expression {
+                            span: Span { start: next_token.span.start, end: after.span.end },
+                            kind: IllegalExpression { value: "illegal".into() },
+                        };
+                    }
+                    return Expression {
+                        span: Span { start: next_token.span.start, end: after.span.end },
+                        kind: IndexExpression { left: Box::from(left), idx: Box::from(idx) },
+                    };
                 }
                 _ => match BinaryOp::try_from(&next_token) {
                     Err(()) => return left,
@@ -397,6 +416,7 @@ impl From<&Token> for ExpressionPrecedence {
             TokenKind::Lt | TokenKind::Gt => LesserGreater,
             TokenKind::Equals | TokenKind::Differs => Equals,
             TokenKind::Lparen => Apply,
+            TokenKind::Lbracket => Index,
             _ => Lowest,
         }
     }
@@ -1411,6 +1431,7 @@ mod tests {
     fn array_expression() {
         let input = r#"
         let a = [1, 2, "c"]
+        a[1 + 2 ]
         "#;
 
         let parser = Parser::from(input);
@@ -1441,6 +1462,38 @@ mod tests {
                                 }
                                 .into(),
                             )
+                        },
+                    },
+                },
+            }
+        );
+
+        assert_eq!(
+            parser.next_statement(),
+            Statement {
+                span: Span { start: 37, end: 46 },
+                kind: ExprStmt {
+                    expr: Expression {
+                        span: Span { start: 38, end: 46 },
+                        kind: IndexExpression {
+                            left: Box::new(Expression {
+                                span: Span { start: 37, end: 38 },
+                                kind: Identifier { name: "a".into() },
+                            }),
+                            idx: Box::new(Expression {
+                                span: Span { start: 39, end: 44 },
+                                kind: Binary {
+                                    op: BinaryOp::OpPlus,
+                                    left: Box::new(Expression {
+                                        span: Span { start: 39, end: 40 },
+                                        kind: LiteralInteger { value: 1 },
+                                    }),
+                                    right: Box::new(Expression {
+                                        span: Span { start: 43, end: 44 },
+                                        kind: LiteralInteger { value: 2 },
+                                    }),
+                                },
+                            }),
                         },
                     },
                 },
