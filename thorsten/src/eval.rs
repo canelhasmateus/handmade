@@ -19,6 +19,12 @@ enum Object {
     Return(Box<Object>),
     Error(String),
     Function(Function),
+    Builtin(Builtin),
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+enum Builtin {
+    Len,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -51,9 +57,19 @@ struct Environment {
 
 impl Environment {
     pub fn new() -> Environment {
+        let mut map = HashMap::default();
+        map.insert("len".to_owned(), Object::Builtin(Builtin::Len));
         return Environment {
             env: Rc::new(RefCell::new(EnvironmentInner {
-                bindings: HashMap::default(),
+                bindings: map,
+                parent: None,
+            })),
+        };
+    }
+    pub fn from(map: HashMap<String, Object>) -> Environment {
+        return Environment {
+            env: Rc::new(RefCell::new(EnvironmentInner {
+                bindings: map,
                 parent: None,
             })),
         };
@@ -196,6 +212,15 @@ impl VM {
                         match self.eval_block(&f.body, &fenv) {
                             Object::Return(o) => *o,
                             e => e,
+                        }
+                    }
+                    Object::Builtin(b) => {
+                        return match b {
+                            Builtin::Len => match args.as_slice() {
+                                [] => Error("Expected args".to_owned()),
+                                [Object::Str(s)] => Object::Integer(s.len() as i32),
+                                a => Error(format!("Expected single Str arg, got {:?}", a)),
+                            },
                         }
                     }
                     o @ Error { .. } => return o,
@@ -509,7 +534,7 @@ mod tests {
                     .into(),),
                 },
             })
-        );
+        )
     }
 
     #[test]
@@ -576,6 +601,38 @@ mod tests {
                  "
                 ),
                 Object::Str("Hello World".into())
+            );
+        }
+    }
+
+    #[test]
+    fn builtins() {
+        {
+            let vm = VM::new();
+            assert_eq!(vm.eval_source(r#"len("")"#), Object::Integer(0));
+        }
+        {
+            let vm = VM::new();
+            assert_eq!(vm.eval_source(r#"len("four")"#), Object::Integer(4));
+        }
+        {
+            let vm = VM::new();
+            assert_eq!(vm.eval_source(r#"len("hello world")"#), Object::Integer(11));
+        }
+        {
+            let vm = VM::new();
+            assert_eq!(
+                vm.eval_source(r#"len(1)"#),
+                Object::Error("Expected single Str arg, got [Integer(1)]".to_owned())
+            );
+        }
+        {
+            let vm = VM::new();
+            assert_eq!(
+                vm.eval_source(r#"len("one" , "two")"#),
+                Object::Error(
+                    "Expected single Str arg, got [Str(\"one\"), Str(\"two\")]".to_owned()
+                )
             );
         }
     }
