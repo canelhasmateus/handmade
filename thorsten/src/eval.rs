@@ -228,6 +228,7 @@ impl VM {
                 }
             }
             ExpressionKind::IllegalExpression { .. } => todo!(),
+            ww => todo!(),
         }
     }
 

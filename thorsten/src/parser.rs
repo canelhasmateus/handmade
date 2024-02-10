@@ -56,6 +56,9 @@ pub enum ExpressionKind {
         parameters: Vec<String>,
         body: StatementBlock,
     },
+    LiteralArray {
+        values: Vec<Box<Expression>>,
+    },
     Identifier {
         name: String,
     },
@@ -172,7 +175,13 @@ impl Parser {
 
             Ident { name } => Expression { span: initial.span, kind: Identifier { name } },
             Str { value } => Expression { span: initial.span, kind: LiteralString { value } },
-
+            TokenKind::Lbracket => {
+                let (args, end) = self.expression_list(&initial, TokenKind::Rbracket);
+                return Expression {
+                    kind: ExpressionKind::LiteralArray { values: args },
+                    span: Span { start: start.start, end: end.end },
+                };
+            }
             Function => {
                 let lp = self.lexer.semantic_token_after(&initial.span);
                 let mut params: Vec<String> = vec![];
@@ -270,7 +279,7 @@ impl Parser {
 
             _ => Expression {
                 // todo: read until Semicolon
-                span: initial.span,
+                span: initial.span.clone(),
                 kind: IllegalExpression { value: self.lexer.slice(&initial.span).into() },
             },
         };
@@ -284,24 +293,9 @@ impl Parser {
 
             match next_token.kind {
                 Lparen => {
-                    let mut args: Vec<Box<Expression>> = vec![];
-                    let mut current = next_token;
-                    loop {
-                        let expr = self.expression_after(&current.span, Lowest);
-                        let tk = self.lexer.semantic_token_after(&expr.span);
-                        args.push(Box::from(expr));
-                        match tk.kind {
-                            TokenKind::Comma => current = tk,
-                            TokenKind::Rparen => {
-                                current = tk;
-                                break;
-                            }
-                            _ => continue,
-                        }
-                    }
-
+                    let (args, end) = self.expression_list(&next_token, TokenKind::Rparen);
                     left = Expression {
-                        span: Span { start: left.span.start, end: current.span.end },
+                        span: Span { start: left.span.start, end: end.end },
                         kind: Call { function: Box::from(left), arguments: args },
                     }
                 }
@@ -321,6 +315,25 @@ impl Parser {
                 },
             }
         }
+    }
+
+    fn expression_list(&self, initial: &Token, kind: TokenKind) -> (Vec<Box<Expression>>, Span) {
+        let mut args: Vec<Box<Expression>> = vec![];
+        let mut current = initial.span;
+        loop {
+            let expr = self.expression_after(&current, Lowest);
+            let tk = self.lexer.semantic_token_after(&expr.span);
+            args.push(Box::from(expr));
+            match tk.kind {
+                TokenKind::Comma => current = tk.span,
+                k if k == kind => {
+                    current = tk.span;
+                    break;
+                }
+                _ => continue,
+            }
+        }
+        (args, current)
     }
 
     pub fn statement_block_after(&self, start: &Span) -> Option<StatementBlock> {
@@ -410,7 +423,9 @@ impl TryFrom<&Token> for BinaryOp {
 #[cfg(test)]
 mod tests {
     use crate::parser::BinaryOp::{OpLesser, OpPlus, OpTimes};
-    use crate::parser::ExpressionKind::{Conditional, LiteralFunction, LiteralString};
+    use crate::parser::ExpressionKind::{
+        Conditional, LiteralArray, LiteralFunction, LiteralString,
+    };
     use crate::parser::Parser;
     use crate::parser::StatementKind::LetStmt;
 
@@ -1386,6 +1401,47 @@ mod tests {
                     expr: Expression {
                         span: Span { start: 9, end: 22 },
                         kind: LiteralString { value: "Hello World".to_string() },
+                    },
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn array_expression() {
+        let input = r#"
+        let a = [1, 2, "c"]
+        "#;
+
+        let parser = Parser::from(input);
+
+        assert_eq!(
+            parser.next_statement(),
+            Statement {
+                span: Span { start: 9, end: 28 },
+                kind: LetStmt {
+                    name: "a".into(),
+                    expr: Expression {
+                        span: Span { start: 15, end: 28 },
+                        kind: LiteralArray {
+                            values: vec!(
+                                Expression {
+                                    span: Span { start: 18, end: 19 },
+                                    kind: LiteralInteger { value: 1 }
+                                }
+                                .into(),
+                                Expression {
+                                    span: Span { start: 21, end: 22 },
+                                    kind: LiteralInteger { value: 2 }
+                                }
+                                .into(),
+                                Expression {
+                                    span: Span { start: 24, end: 27 },
+                                    kind: LiteralString { value: "c".into() }
+                                }
+                                .into(),
+                            )
+                        },
                     },
                 },
             }

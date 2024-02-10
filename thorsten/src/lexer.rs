@@ -37,6 +37,9 @@ pub enum TokenKind {
     Lparen,
     Rparen,
 
+    Lbracket,
+    Rbracket,
+
     Lbrace,
     Rbrace,
 
@@ -91,6 +94,9 @@ impl Lexer {
 
             '{' => TokenKind::Lbrace,
             '}' => TokenKind::Rbrace,
+
+            '[' => TokenKind::Lbracket,
+            ']' => TokenKind::Rbracket,
 
             '<' => TokenKind::Lt,
             '>' => TokenKind::Gt,
@@ -496,6 +502,31 @@ mod tests {
         assert_eq!(
             lexer.next_semantic().kind,
             TokenKind::Str { value: "hey \\\"you\\\" there".into() }
+        );
+    }
+
+    #[test]
+    fn array() {
+        let source = r#"
+        let a = [1 , 2 , "b"]
+        "#;
+
+        let lexer = Lexer::from(source);
+
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Let);
+        assert_eq!(
+            lexer.next_semantic().kind,
+            TokenKind::Ident { name: "a".into() }
+        );
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Assign);
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Lbracket);
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Int { value: 1 });
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Comma);
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Int { value: 2 });
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Comma);
+        assert_eq!(
+            lexer.next_semantic().kind,
+            TokenKind::Str { value: "b".into() }
         );
     }
 }
