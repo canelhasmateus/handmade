@@ -5,10 +5,10 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use crate::eval::Object::Error;
-use crate::parser::StatementKind::EndStatement;
 use crate::parser::{
     BinaryOp, Expression, ExpressionKind, Parser, StatementBlock, StatementKind, UnaryOp,
 };
+use crate::parser::StatementKind::EndStatement;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 enum Object {
@@ -28,6 +28,8 @@ enum Builtin {
     Len,
     First,
     Last,
+    Rest,
+    Push,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -64,6 +66,8 @@ impl Environment {
         map.insert("len".to_owned(), Object::Builtin(Builtin::Len));
         map.insert("first".to_owned(), Object::Builtin(Builtin::First));
         map.insert("last".to_owned(), Object::Builtin(Builtin::Last));
+        map.insert("rest".to_owned(), Object::Builtin(Builtin::Rest));
+        map.insert("push".to_owned(), Object::Builtin(Builtin::Push));
         return Environment {
             env: Rc::new(RefCell::new(EnvironmentInner {
                 bindings: map,
@@ -269,6 +273,25 @@ impl VM {
                                     .unwrap_or_else(|| Object::Null),
                                 [Object::Str(s)] => {
                                     Object::Str(s.chars().rev().nth(0).unwrap().to_string())
+                                }
+                                a => Error(format!("Expected single Str arg, got {:?}", a)),
+                            },
+                            Builtin::Rest => match args.as_slice() {
+                                [] => Error("Expected args".to_owned()),
+                                [Object::Array(s)] => Object::Array(s
+                                    .iter()
+                                    .skip(1)
+                                    .map(|o| o.clone())
+                                    .collect()
+                                ),
+                                a => Error(format!("Expected single Str arg, got {:?}", a)),
+                            },
+                            Builtin::Push => match args.as_slice() {
+                                [] => Error("Expected args".to_owned()),
+                                [Object::Array(s), o] => {
+                                    let mut s2 = s.clone();
+                                    s2.push(Box::from(o.clone()));
+                                    Object::Array(s2)
                                 }
                                 a => Error(format!("Expected single Str arg, got {:?}", a)),
                             },
@@ -648,6 +671,58 @@ mod tests {
         assert_eq!(
             evaluate(r#" [1, 2 * 2, 3 + 3][fn(x) { x }(0)]"#),
             Object::Integer(1).into()
+        );
+    }
+
+    #[test]
+    fn map_reduce() {
+        let map_input = r#"
+        let map = fn(arr, f) {
+            let iter = fn(arr, accumulated) {
+                if (len(arr) == 0) {
+                    accumulated
+                } else {
+                    iter(rest(arr), push(accumulated, f(first(arr))));
+                }
+            };
+            iter(arr, []);
+        };
+        let a = [1, 2, 3, 4];
+        let double = fn(x) { x * 2 };
+        map(a, double);
+        "#;
+
+        assert_eq!(
+            evaluate(map_input),
+            Object::Array(vec!(
+                Object::Integer(2).into(),
+                Object::Integer(4).into(),
+                Object::Integer(6).into(),
+                Object::Integer(8).into()
+            ))
+        );
+
+        let reduce_input = r#"
+        let reduce = fn(arr, initial, f) {
+            let iter = fn(arr, result) {
+                if (len(arr) == 0) {
+                    result
+                } else {
+                    iter(rest(arr), f(result, first(arr)));
+                }
+            };
+            iter(arr, initial);
+        };
+
+        let sum = fn(arr) {
+            reduce(arr, 0, fn(initial, el) { initial + el });
+        };
+        sum([1,2,3,4,5])
+        "#;
+
+        assert_eq!(
+            evaluate(reduce_input),
+            Object::Integer(15)
         );
     }
 }
