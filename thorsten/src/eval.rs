@@ -20,6 +20,7 @@ enum Object {
     Error(String),
     Function(Function),
     Builtin(Builtin),
+    Array(Vec<Box<Object>>),
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -153,6 +154,13 @@ impl VM {
             ExpressionKind::LiteralInteger { value } => Object::Integer(*value),
             ExpressionKind::LiteralString { value } => Object::Str(value.clone()),
             ExpressionKind::LiteralBoolean { value } => as_boolean(*value),
+            ExpressionKind::LiteralArray { values } => {
+                let v: Vec<Box<Object>> = values
+                    .iter()
+                    .map(|v| self.eval_expression(&v.kind, env).into())
+                    .collect();
+                Object::Array(v)
+            }
             ExpressionKind::Unary { op, expr } => match (op, &expr.kind) {
                 (UnaryOp::OpNot, k) => match self.eval_expression(k, env) {
                     Object::Boolean(Booleans::True) => Object::Boolean(Booleans::False),
@@ -171,6 +179,22 @@ impl VM {
                 body: body.clone(),
                 env: Environment::extend(env),
             }),
+            ExpressionKind::IndexExpression { left, idx } => {
+                let index = self.eval_expression(&idx.kind, env);
+                let lobj = self.eval_expression(&left.kind, env);
+
+                match (lobj, index) {
+                    (Object::Array(values), Object::Integer(i)) => match values.get(i as usize) {
+                        Some(v) => *v.clone(),
+                        None => Object::Error("indexing error".into()),
+                    },
+
+                    (Object::Str(values), Object::Integer(value)) => {
+                        Object::Str(values.as_bytes()[value as usize].to_string())
+                    }
+                    (_, _) => Error("Not sure what this indexing is".into()),
+                }
+            }
             ExpressionKind::Identifier { name } => match env.get(name) {
                 None => Error(format!("Unknown identifier {:?}", name)),
                 Some(expr) => expr.clone(),
@@ -567,6 +591,26 @@ mod tests {
         assert_eq!(
             evaluate(r#"len("one" , "two")"#),
             Object::Error("Expected single Str arg, got [Str(\"one\"), Str(\"two\")]".to_owned())
+        );
+    }
+
+    #[test]
+    fn arrays() {
+        assert_eq!(
+            evaluate(r#" [1, 2 * 2, 3 + 3] "#),
+            Object::Array(vec!(Object::Integer(1).into(),
+                               Object::Integer(4).into(),
+                               Object::Integer(6).into()))
+        );
+
+        assert_eq!(
+            evaluate(r#" [1, 2 * 2, 3 + 3][fn() { 2 }()]"#),
+            Object::Integer(6).into()
+        );
+
+        assert_eq!(
+            evaluate(r#" [1, 2 * 2, 3 + 3][fn(x) { x }(0)]"#),
+            Object::Integer(1).into()
         );
     }
 }
