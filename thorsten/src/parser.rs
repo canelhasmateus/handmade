@@ -7,8 +7,8 @@ use TokenKind::{
     Return, Rparen, True,
 };
 
-use crate::lexer::{Lexer, Span, Token, TokenKind};
 use crate::lexer::TokenKind::{Comma, Function, If, Rbracket, Semicolon, Str};
+use crate::lexer::{Lexer, Span, Token, TokenKind};
 use crate::parser::ExpressionKind::{Binary, Call, Conditional, IndexExpression, LiteralString};
 use crate::parser::ExpressionPrecedence::{
     Apply, Equals, Index, LesserGreater, Lowest, Prefix, Product, Sum,
@@ -356,7 +356,7 @@ impl Parser {
             }
             if tk.kind == Comma {
                 current = tk.span;
-                continue
+                continue;
             }
 
             let expression = self.expression_after(&current, Lowest);
@@ -454,13 +454,13 @@ impl TryFrom<&Token> for BinaryOp {
 #[cfg(test)]
 mod tests {
     use crate::lexer::Span;
-    use crate::parser::{BinaryOp, Expression, Parser, Statement, StatementBlock, UnaryOp};
     use crate::parser::BinaryOp::{OpLesser, OpPlus, OpTimes};
     use crate::parser::ExpressionKind::{
         Binary, Call, Conditional, Identifier, IndexExpression, LiteralArray, LiteralBoolean,
         LiteralFunction, LiteralInteger, LiteralString, Unary,
     };
     use crate::parser::StatementKind::{ExprStmt, LetStmt, ReturnStmt};
+    use crate::parser::{BinaryOp, Expression, Parser, Statement, StatementBlock, UnaryOp};
 
     #[test]
     fn parser_initialization() {

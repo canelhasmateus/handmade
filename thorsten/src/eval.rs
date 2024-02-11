@@ -26,6 +26,8 @@ enum Object {
 #[derive(Debug, Eq, PartialEq, Clone)]
 enum Builtin {
     Len,
+    First,
+    Last,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -60,6 +62,8 @@ impl Environment {
     pub fn new() -> Environment {
         let mut map = HashMap::default();
         map.insert("len".to_owned(), Object::Builtin(Builtin::Len));
+        map.insert("first".to_owned(), Object::Builtin(Builtin::First));
+        map.insert("last".to_owned(), Object::Builtin(Builtin::Last));
         return Environment {
             env: Rc::new(RefCell::new(EnvironmentInner {
                 bindings: map,
@@ -242,7 +246,30 @@ impl VM {
                         return match b {
                             Builtin::Len => match args.as_slice() {
                                 [] => Error("Expected args".to_owned()),
+                                [Object::Array(s)] => Object::Integer(s.len() as i32),
                                 [Object::Str(s)] => Object::Integer(s.len() as i32),
+                                a => Error(format!("Expected single Str arg, got {:?}", a)),
+                            },
+                            Builtin::First => match args.as_slice() {
+                                [] => Error("Expected args".to_owned()),
+                                [Object::Array(s)] => s
+                                    .first()
+                                    .map(|o| o.as_ref().clone())
+                                    .unwrap_or_else(|| Object::Null),
+                                [Object::Str(s)] => {
+                                    Object::Str(s.chars().nth(0).unwrap().to_string())
+                                }
+                                a => Error(format!("Expected single Str arg, got {:?}", a)),
+                            },
+                            Builtin::Last => match args.as_slice() {
+                                [] => Error("Expected args".to_owned()),
+                                [Object::Array(s)] => s
+                                    .last()
+                                    .map(|o| o.as_ref().clone())
+                                    .unwrap_or_else(|| Object::Null),
+                                [Object::Str(s)] => {
+                                    Object::Str(s.chars().rev().nth(0).unwrap().to_string())
+                                }
                                 a => Error(format!("Expected single Str arg, got {:?}", a)),
                             },
                         }
@@ -592,15 +619,25 @@ mod tests {
             evaluate(r#"len("one" , "two")"#),
             Object::Error("Expected single Str arg, got [Str(\"one\"), Str(\"two\")]".to_owned())
         );
+
+        assert_eq!(evaluate(r#"len([])"#), Object::Integer(0));
+        assert_eq!(evaluate(r#"len([1])"#), Object::Integer(1));
+        assert_eq!(evaluate(r#"len([1, "2", fn(){3}])"#), Object::Integer(3));
+        assert_eq!(evaluate(r#"first([])"#), Object::Null);
+        assert_eq!(evaluate(r#"last([])"#), Object::Null);
+        assert_eq!(evaluate(r#"first([1])"#), Object::Integer(1));
+        assert_eq!(evaluate(r#"last([fn(){3}, "2", 1])"#), Object::Integer(1));
     }
 
     #[test]
     fn arrays() {
         assert_eq!(
             evaluate(r#" [1, 2 * 2, 3 + 3] "#),
-            Object::Array(vec!(Object::Integer(1).into(),
-                               Object::Integer(4).into(),
-                               Object::Integer(6).into()))
+            Object::Array(vec!(
+                Object::Integer(1).into(),
+                Object::Integer(4).into(),
+                Object::Integer(6).into()
+            ))
         );
 
         assert_eq!(
