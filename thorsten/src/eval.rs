@@ -31,6 +31,7 @@ enum Builtin {
     Last,
     Rest,
     Push,
+    Puts,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Ord, PartialOrd)]
@@ -69,6 +70,7 @@ impl Environment {
         map.insert("last".to_owned(), Object::Builtin(Builtin::Last));
         map.insert("rest".to_owned(), Object::Builtin(Builtin::Rest));
         map.insert("push".to_owned(), Object::Builtin(Builtin::Push));
+        map.insert("puts".to_owned(), Object::Builtin(Builtin::Puts));
         return Environment {
             env: Rc::new(RefCell::new(EnvironmentInner {
                 bindings: map,
@@ -310,6 +312,12 @@ impl VM {
                                 }
                                 a => Error(format!("Expected single Str arg, got {:?}", a)),
                             },
+                            Builtin::Puts => {
+                                for x in args {
+                                    println!("{:?}", x)
+                                }
+                                Object::Null
+                            }
                         }
                     }
                     o @ Error { .. } => return o,
