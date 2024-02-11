@@ -7,27 +7,29 @@ use TokenKind::{
     Return, Rparen, True,
 };
 
-use crate::lexer::TokenKind::{Comma, Function, If, Rbracket, Semicolon, Str};
+use crate::lexer::TokenKind::{Colon, Comma, Function, If, Rbracket, Semicolon, Str};
 use crate::lexer::{Lexer, Span, Token, TokenKind};
-use crate::parser::ExpressionKind::{Binary, Call, Conditional, IndexExpression, LiteralString};
+use crate::parser::ExpressionKind::{
+    Binary, Call, Conditional, IndexExpression, LiteralHash, LiteralString,
+};
 use crate::parser::ExpressionPrecedence::{
     Apply, Equals, Index, LesserGreater, Lowest, Prefix, Product, Sum,
 };
 use crate::parser::StatementKind::{EndStatement, ExprStmt};
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]
 pub struct Statement {
     pub span: Span,
     pub kind: StatementKind,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]
 pub struct Expression {
     pub span: Span,
     pub kind: ExpressionKind,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]
 pub enum StatementKind {
     LetStmt { name: String, expr: Expression },
     ReturnStmt { expr: Expression },
@@ -36,12 +38,13 @@ pub enum StatementKind {
     EndStatement,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]
 pub struct StatementBlock {
     pub span: Span,
     pub statements: Vec<Box<Statement>>,
 }
-#[derive(Debug, PartialEq, Eq, Clone)]
+
+#[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]
 pub enum ExpressionKind {
     LiteralInteger {
         value: i32,
@@ -58,6 +61,9 @@ pub enum ExpressionKind {
     },
     LiteralArray {
         values: Vec<Box<Expression>>,
+    },
+    LiteralHash {
+        values: Vec<(Expression, Expression)>,
     },
     Identifier {
         name: String,
@@ -89,13 +95,13 @@ pub enum ExpressionKind {
     },
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]
 pub enum UnaryOp {
     OpNot,
     OpNeg,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]
 pub enum BinaryOp {
     OpPlus,
     OpMinus,
@@ -180,6 +186,41 @@ impl Parser {
 
             Ident { name } => Expression { span: initial.span, kind: Identifier { name } },
             Str { value } => Expression { span: initial.span, kind: LiteralString { value } },
+            Lbrace => {
+                let mut current = initial.span;
+                let mut values: Vec<(Expression, Expression)> = vec![];
+                loop {
+                    let after = self.lexer.semantic_token_after(&current);
+                    if after.kind == Rbrace {
+                        current = after.span;
+                        break;
+                    }
+
+                    let k = self.expression_after(&current, Lowest);
+                    let c = self.lexer.semantic_token_after(&k.span);
+                    let v = self.expression_after(&c.span, Lowest);
+                    let comma = self.lexer.semantic_token_after(&v.span);
+
+                    if c.kind != Colon {
+                        return Expression {
+                            span: Span { start: initial.span.start, end: c.span.end },
+                            kind: IllegalExpression { value: "expected hash".into() },
+                        };
+                    }
+
+                    current = if comma.kind == Comma {
+                        comma.span
+                    } else {
+                        v.span
+                    };
+
+                    values.push((k, v));
+                }
+                Expression {
+                    span: Span { start: initial.span.start, end: current.end },
+                    kind: LiteralHash { values },
+                }
+            }
             Function => {
                 let lp = self.lexer.semantic_token_after(&initial.span);
                 let mut params: Vec<String> = vec![];
@@ -457,7 +498,7 @@ mod tests {
     use crate::parser::BinaryOp::{OpLesser, OpPlus, OpTimes};
     use crate::parser::ExpressionKind::{
         Binary, Call, Conditional, Identifier, IndexExpression, LiteralArray, LiteralBoolean,
-        LiteralFunction, LiteralInteger, LiteralString, Unary,
+        LiteralFunction, LiteralHash, LiteralInteger, LiteralString, Unary,
     };
     use crate::parser::StatementKind::{ExprStmt, LetStmt, ReturnStmt};
     use crate::parser::{BinaryOp, Expression, Parser, Statement, StatementBlock, UnaryOp};
@@ -1505,6 +1546,56 @@ mod tests {
                                     }),
                                 },
                             }),
+                        },
+                    },
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn hash_expression() {
+        let input = r#"
+        let a = { "a" : 1 , "b" : 2 }
+        "#;
+
+        let parser = Parser::from(input);
+
+        assert_eq!(
+            parser.next_statement(),
+            Statement {
+                span: Span { start: 9, end: 38 },
+                kind: LetStmt {
+                    name: "a".into(),
+                    expr: Expression {
+                        span: Span { start: 17, end: 38 },
+                        kind: LiteralHash {
+                            values: vec!(
+                                (
+                                    Expression {
+                                        span: Span { start: 19, end: 22 },
+                                        kind: LiteralString { value: "a".into() },
+                                    }
+                                    .into(),
+                                    Expression {
+                                        span: Span { start: 25, end: 26 },
+                                        kind: LiteralInteger { value: 1 },
+                                    }
+                                    .into()
+                                ),
+                                (
+                                    Expression {
+                                        span: Span { start: 29, end: 32 },
+                                        kind: LiteralString { value: "b".into() },
+                                    }
+                                    .into(),
+                                    Expression {
+                                        span: Span { start: 35, end: 36 },
+                                        kind: LiteralInteger { value: 2 },
+                                    }
+                                    .into()
+                                )
+                            )
                         },
                     },
                 },

@@ -4,7 +4,7 @@ use std::cmp::min;
 use crate::lexer::LiteralKind::{DIGIT, LETTER, OTHER, WHITESPACE};
 use crate::lexer::TokenKind::{Assign, Bang, Differs, Equals};
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Ord, PartialOrd)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
@@ -24,6 +24,7 @@ pub enum TokenKind {
     Assign,
 
     Comma,
+    Colon,
     Semicolon,
 
     Plus,
@@ -87,6 +88,7 @@ impl Lexer {
             '-' => TokenKind::Minus,
 
             ',' => TokenKind::Comma,
+            ':' => TokenKind::Colon,
             ';' => TokenKind::Semicolon,
 
             '(' => TokenKind::Lparen,
@@ -528,5 +530,38 @@ mod tests {
             lexer.next_semantic().kind,
             TokenKind::Str { value: "b".into() }
         );
+    }
+
+    #[test]
+    fn hash_literal() {
+        let source = r#"
+        let a = {"a" : 1 , "b": 2 }
+        "#;
+
+        let lexer = Lexer::from(source);
+
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Let);
+        assert_eq!(
+            lexer.next_semantic().kind,
+            TokenKind::Ident { name: "a".into() }
+        );
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Assign);
+
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Lbrace);
+        assert_eq!(
+            lexer.next_semantic().kind,
+            TokenKind::Str { value: "a".into() }
+        );
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Colon);
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Int { value: 1 });
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Comma);
+        assert_eq!(
+            lexer.next_semantic().kind,
+            TokenKind::Str { value: "b".into() }
+        );
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Colon);
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Int { value: 2 });
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Rbrace);
+        assert_eq!(lexer.next_semantic().kind, TokenKind::Eof);
     }
 }

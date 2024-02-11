@@ -1,16 +1,16 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::iter::zip;
 use std::ops::Deref;
 use std::rc::Rc;
 
 use crate::eval::Object::Error;
+use crate::parser::StatementKind::EndStatement;
 use crate::parser::{
     BinaryOp, Expression, ExpressionKind, Parser, StatementBlock, StatementKind, UnaryOp,
 };
-use crate::parser::StatementKind::EndStatement;
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
 enum Object {
     Integer(i32),
     Boolean(Booleans),
@@ -21,9 +21,10 @@ enum Object {
     Function(Function),
     Builtin(Builtin),
     Array(Vec<Box<Object>>),
+    Hash(BTreeMap<Object, Object>),
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Ord, PartialOrd)]
 enum Builtin {
     Len,
     First,
@@ -32,14 +33,14 @@ enum Builtin {
     Push,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Ord, PartialOrd)]
 struct Function {
     parameters: Vec<String>,
     body: StatementBlock,
     env: Environment,
 }
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone, Ord, PartialOrd)]
 enum Booleans {
     True,
     False,
@@ -49,20 +50,20 @@ struct VM {
     env: Environment,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Ord, PartialOrd)]
 struct EnvironmentInner {
-    bindings: HashMap<String, Object>,
+    bindings: BTreeMap<String, Object>,
     parent: Option<Environment>,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Ord, PartialOrd)]
 struct Environment {
     env: Rc<RefCell<EnvironmentInner>>,
 }
 
 impl Environment {
     pub fn new() -> Environment {
-        let mut map = HashMap::default();
+        let mut map = BTreeMap::default();
         map.insert("len".to_owned(), Object::Builtin(Builtin::Len));
         map.insert("first".to_owned(), Object::Builtin(Builtin::First));
         map.insert("last".to_owned(), Object::Builtin(Builtin::Last));
@@ -75,7 +76,7 @@ impl Environment {
             })),
         };
     }
-    pub fn from(map: HashMap<String, Object>) -> Environment {
+    pub fn from(map: BTreeMap<String, Object>) -> Environment {
         return Environment {
             env: Rc::new(RefCell::new(EnvironmentInner {
                 bindings: map,
@@ -86,7 +87,7 @@ impl Environment {
     pub fn extend(env: &Environment) -> Environment {
         return Environment {
             env: Rc::new(RefCell::new(EnvironmentInner {
-                bindings: HashMap::default(),
+                bindings: BTreeMap::default(),
                 parent: Some(Environment { env: env.env.clone() }),
             })),
         };
@@ -182,6 +183,18 @@ impl VM {
                     obj => Error(format!("Unknown operator: -{:?}", obj)),
                 },
             },
+            ExpressionKind::LiteralHash { values } => {
+                let map = values
+                    .iter()
+                    .map(|(a, b)| {
+                        (
+                            self.eval_expression(&a.kind, env),
+                            self.eval_expression(&b.kind, env),
+                        )
+                    })
+                    .collect::<BTreeMap<Object, Object>>();
+                Object::Hash(map)
+            }
             ExpressionKind::LiteralFunction { parameters, body } => Object::Function(Function {
                 parameters: parameters.clone(),
                 body: body.clone(),
@@ -200,6 +213,11 @@ impl VM {
                     (Object::Str(values), Object::Integer(value)) => {
                         Object::Str(values.as_bytes()[value as usize].to_string())
                     }
+                    (Object::Hash(values), o) => values
+                        .get(&o)
+                        .map(|o| o.clone())
+                        .unwrap_or_else(|| Object::Null),
+
                     (_, _) => Error("Not sure what this indexing is".into()),
                 }
             }
@@ -278,12 +296,9 @@ impl VM {
                             },
                             Builtin::Rest => match args.as_slice() {
                                 [] => Error("Expected args".to_owned()),
-                                [Object::Array(s)] => Object::Array(s
-                                    .iter()
-                                    .skip(1)
-                                    .map(|o| o.clone())
-                                    .collect()
-                                ),
+                                [Object::Array(s)] => {
+                                    Object::Array(s.iter().skip(1).map(|o| o.clone()).collect())
+                                }
                                 a => Error(format!("Expected single Str arg, got {:?}", a)),
                             },
                             Builtin::Push => match args.as_slice() {
@@ -382,6 +397,8 @@ fn as_boolean(value: bool) -> Object {
 
 #[cfg(test)]
 mod tests {
+    use crate::eval::Booleans::{False, True};
+    use crate::eval::Object::{Boolean, Integer, Str};
     use crate::lexer::Span;
     use crate::parser::ExpressionKind::Binary;
     use crate::parser::Statement;
@@ -720,9 +737,46 @@ mod tests {
         sum([1,2,3,4,5])
         "#;
 
+        assert_eq!(evaluate(reduce_input), Object::Integer(15));
+    }
+
+    #[test]
+    fn hashes() {
+        let hash_input = r#"
+        let two = "two";
+        {
+            "one"       : 10 - 9,
+            two         : 1 + 1,
+            "thr" + "ee": 6 / 2,
+            4           : 4,
+            true        : 5,
+            false       : 6
+        }
+        "#;
+
         assert_eq!(
-            evaluate(reduce_input),
-            Object::Integer(15)
+            evaluate(hash_input),
+            Object::Hash(BTreeMap::from([
+                (Integer(4), Integer(4)),
+                (Boolean(True), Integer(5)),
+                (Boolean(False), Integer(6)),
+                (Str("one".into()), Integer(1)),
+                (Str("three".into()), Integer(3)),
+                (Str("two".into()), Integer(2)),
+            ]))
         );
+
+        let index_input = r#"
+        {
+            "one"       : 10 - 9,
+            "two"       : 1 + 1,
+            "thr" + "ee": 6 / 2,
+            4           : 4,
+            true        : 5,
+            false       : 6
+        }[true]
+        "#;
+
+        assert_eq!(evaluate(index_input), Integer(5));
     }
 }
