@@ -2,7 +2,7 @@ use std::cmp::min;
 use std::ops::Index;
 use std::slice::SliceIndex;
 
-use crate::lexer2::LiteralKind::{DIGIT, LETTER, OTHER, WHITESPACE};
+use crate::re_lexer::TokenKind::Eof;
 
 #[derive(Debug, Eq, PartialEq, Default, Copy, Clone)]
 pub struct Range {
@@ -19,8 +19,11 @@ impl Index<Range> for str {
 }
 
 impl Range {
-    fn new(start: usize, end: usize) -> Range {
+    pub fn new(start: usize, end: usize) -> Range {
         return Range { start, end };
+    }
+    pub fn merge(start: &Range, end: &Range) -> Range {
+        return Range { start: start.start, end: end.end };
     }
 }
 
@@ -87,10 +90,10 @@ enum LiteralKind {
 
 fn literal_kind(value: char) -> LiteralKind {
     match value {
-        ' ' | '\t' | '\n' | '\r' => WHITESPACE,
-        '_' | 'a'..='z' | 'A'..='Z' => LETTER,
-        '0'..='9' => DIGIT,
-        _ => OTHER,
+        ' ' | '\t' | '\n' | '\r' => LiteralKind::WHITESPACE,
+        '_' | 'a'..='z' | 'A'..='Z' => LiteralKind::LETTER,
+        '0'..='9' => LiteralKind::DIGIT,
+        _ => LiteralKind::OTHER,
     }
 }
 
@@ -157,10 +160,10 @@ pub fn token_after(input: &str, range: &Range) -> RawToken {
                 .count();
 
             let tkind = match ckind {
-                DIGIT => TokenKind::Int,
-                WHITESPACE => TokenKind::Blank,
-                OTHER => TokenKind::Illegal,
-                LETTER => match &rest[..size] {
+                LiteralKind::DIGIT => TokenKind::Int,
+                LiteralKind::WHITESPACE => TokenKind::Blank,
+                LiteralKind::OTHER => TokenKind::Illegal,
+                LiteralKind::LETTER => match &rest[..size] {
                     "let" => TokenKind::Let,
                     "fn" => TokenKind::Function,
                     "true" => TokenKind::True,
@@ -175,15 +178,32 @@ pub fn token_after(input: &str, range: &Range) -> RawToken {
         }
     };
 
-    return RawToken { kind, range: Range { start: start, end: start + len } };
+    return RawToken {
+        kind,
+        range: Range { start: start, end: start + len },
+    };
 }
 
-pub fn raw_tokens(input: &str) -> impl Iterator<Item=RawToken> + '_ {
+pub fn real_token_after(input: &str, range: &Range) -> RawToken {
+    let mut token = token_after(input, range);
+
+    while matches!(token.kind, TokenKind::Blank) {
+        token = token_after(input, &token.range);
+    }
+
+    return token;
+}
+
+pub fn raw_tokens(input: &str) -> impl Iterator<Item = RawToken> + '_ {
     let mut current = Range::new(0, 0);
     std::iter::from_fn(move || {
         let token = token_after(input, &current);
         current = token.range;
-        Some(token).filter(|t| t.kind != TokenKind::Eof)
+        if token.kind == Eof {
+            None
+        } else {
+            Some(token)
+        }
     })
 }
 
@@ -194,16 +214,13 @@ mod tests {
     #[derive(Debug, Eq, PartialEq, Copy, Clone)]
     pub struct Token<'a> {
         pub kind: TokenKind,
-        pub range: Range,
         pub content: &'a str,
     }
 
-    pub fn tokens(input: &str) -> impl Iterator<Item=Token<'_>> {
+    pub fn tokens(input: &str) -> impl Iterator<Item = Token<'_>> {
         raw_tokens(input)
             .filter(|t| t.kind != TokenKind::Blank)
-            .map(|t| {
-                Token { kind: t.kind, range: t.range, content: &input[t.range] }
-            })
+            .map(|t| Token { kind: t.kind, content: &input[t.range] })
     }
 
     #[test]

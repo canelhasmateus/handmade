@@ -4,6 +4,7 @@ mod eval;
 mod lexer;
 mod parser;
 mod re_lexer;
+mod re_parser;
 
 fn main() {}
 

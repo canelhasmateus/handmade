@@ -179,13 +179,25 @@ impl Parser {
     pub fn expression_after(&self, start: &Span, precedence: ExpressionPrecedence) -> Expression {
         let initial = self.lexer.semantic_token_after(start);
         let mut left = match initial.kind {
-            True => Expression { span: initial.span, kind: LiteralBoolean { value: true } },
-            False => Expression { span: initial.span, kind: LiteralBoolean { value: false } },
+            True => Expression {
+                span: initial.span,
+                kind: LiteralBoolean { value: true },
+            },
+            False => Expression {
+                span: initial.span,
+                kind: LiteralBoolean { value: false },
+            },
 
-            Int { value } => Expression { span: initial.span, kind: LiteralInteger { value } },
+            Int { value } => Expression {
+                span: initial.span,
+                kind: LiteralInteger { value },
+            },
 
             Ident { name } => Expression { span: initial.span, kind: Identifier { name } },
-            Str { value } => Expression { span: initial.span, kind: LiteralString { value } },
+            Str { value } => Expression {
+                span: initial.span,
+                kind: LiteralString { value },
+            },
             Lbrace => {
                 let mut current = initial.span;
                 let mut values: Vec<(Expression, Expression)> = vec![];
@@ -242,7 +254,10 @@ impl Parser {
 
                         _ => {
                             return Expression {
-                                span: Span { start: initial.span.start, end: current.span.end },
+                                span: Span {
+                                    start: initial.span.start,
+                                    end: current.span.end,
+                                },
                                 kind: IllegalExpression { value: "erro na função".into() },
                             }
                         }
@@ -252,11 +267,17 @@ impl Parser {
                 let statement = self.statement_block_after(&current.span);
                 match statement {
                     Some(block) => Expression {
-                        span: Span { start: initial.span.start, end: block.span.end },
+                        span: Span {
+                            start: initial.span.start,
+                            end: block.span.end,
+                        },
                         kind: LiteralFunction { parameters: params, body: block },
                     },
                     _ => Expression {
-                        span: Span { start: initial.span.start, end: current.span.end },
+                        span: Span {
+                            start: initial.span.start,
+                            end: current.span.end,
+                        },
                         kind: IllegalExpression {
                             value: "expected statement block after function parameters".into(),
                         },
@@ -272,7 +293,10 @@ impl Parser {
 
                 match (lp.kind, expr, rp.kind, positive) {
                     (Lparen, condition, Rparen, Some(if_block)) => {
-                        let mut span = Span { start: initial.span.start, end: if_block.span.end };
+                        let mut span = Span {
+                            start: initial.span.start,
+                            end: if_block.span.end,
+                        };
 
                         let token_else = self.lexer.semantic_token_after(&if_block.span);
                         let alternative = self.statement_block_after(&token_else.span);
@@ -306,7 +330,10 @@ impl Parser {
                 let expr = self.expression_after(&initial.span, Prefix);
                 Expression {
                     span: Span { start: initial.span.start, end: expr.span.end },
-                    kind: Unary { op: UnaryOp::try_from(&initial).unwrap(), expr: expr.into() },
+                    kind: Unary {
+                        op: UnaryOp::try_from(&initial).unwrap(),
+                        expr: expr.into(),
+                    },
                 }
             }
 
@@ -358,12 +385,18 @@ impl Parser {
                     let after = self.lexer.semantic_token_after(&idx.span);
                     if after.kind != Rbracket {
                         return Expression {
-                            span: Span { start: next_token.span.start, end: after.span.end },
+                            span: Span {
+                                start: next_token.span.start,
+                                end: after.span.end,
+                            },
                             kind: IllegalExpression { value: "illegal".into() },
                         };
                     }
                     return Expression {
-                        span: Span { start: next_token.span.start, end: after.span.end },
+                        span: Span {
+                            start: next_token.span.start,
+                            end: after.span.end,
+                        },
                         kind: IndexExpression { left: Box::from(left), idx: Box::from(idx) },
                     };
                 }
@@ -421,7 +454,10 @@ impl Parser {
             match current_token.kind {
                 Eof | Rbrace => {
                     return Some(StatementBlock {
-                        span: Span { start: lb.span.start, end: current_token.span.end },
+                        span: Span {
+                            start: lb.span.start,
+                            end: current_token.span.end,
+                        },
                         statements: res,
                     })
                 }
