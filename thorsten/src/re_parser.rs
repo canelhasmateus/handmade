@@ -1,4 +1,4 @@
-use crate::re_lexer::{real_token_after, Range, RawToken, TokenKind};
+use crate::re_lexer::{token_after, Range, RawToken, TokenKind};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Ord, PartialOrd)]
 pub struct StatementId(usize);
@@ -127,7 +127,7 @@ fn expression_after(
     table: &mut ExprTable,
     precedence: Precedence,
 ) -> RawExpression {
-    match real_token_after(input, range) {
+    match token_after(input, range) {
         RawToken {
             kind: TokenKind::True | TokenKind::False,
             range,
@@ -154,13 +154,129 @@ fn expression_after(
         }
 
         RawToken { kind: TokenKind::Lparen, .. } => parenthesized_expression(input, range, table),
+
+        RawToken { kind: TokenKind::If, ref range } => if_expression(input, range, table),
         _ => todo!(),
     }
 }
 
+fn if_expression(input: &str, initial: &Range, table: &mut ExprTable) -> RawExpression {
+    let lp = {
+        let token = token_after(input, initial);
+        match token.kind {
+            TokenKind::Lparen => token,
+            k => {
+                return RawExpression {
+                    range: Range::merge(initial, &token.range),
+                    kind: RawExpressionKind::IllegalExpression,
+                }
+            }
+        }
+    };
+
+    let condition = expression_after(input, &lp.range, table, Precedence::Lowest);
+
+    let rp = {
+        let token = token_after(input, &condition.range);
+        match token.kind {
+            TokenKind::Rparen => token,
+            k => {
+                return RawExpression {
+                    range: Range::merge(initial, &token.range),
+                    kind: RawExpressionKind::IllegalExpression,
+                }
+            }
+        }
+    };
+
+    let positive = match statement_block(input, &rp.range, table) {
+        Ok(o) => o,
+        Err(expr) => return expr,
+    };
+
+    let StatementBlock { statements, ref range } = {
+        let RawToken { kind, ref range } = token_after(input, &positive.range);
+        if kind != TokenKind::Else {
+            StatementBlock { statements: vec![], range: positive.range }
+        } else {
+            match statement_block(input, range, table) {
+                Ok(t) => t,
+                Err(expr) => return expr,
+            }
+        }
+    };
+
+    RawExpression {
+        range: Range::merge(initial, range),
+        kind: RawExpressionKind::Conditional {
+            condition: table.add_expression(condition),
+            positive: positive.statements,
+            negative: statements,
+        },
+    }
+}
+
+struct StatementBlock {
+    statements: Vec<StatementId>,
+    range: Range,
+}
+
+fn statement_block(
+    input: &str,
+    initial: &Range,
+    table: &mut ExprTable,
+) -> Result<StatementBlock, RawExpression> {
+    let mut res: Vec<StatementId> = Vec::new();
+
+    let left_brace = {
+        match token_after(input, initial) {
+            t if t.kind == TokenKind::Lbrace => t,
+            RawToken { ref range, .. } => {
+                return Err(RawExpression {
+                    range: Range::merge(initial, range),
+                    kind: RawExpressionKind::LiteralInteger,
+                })
+            }
+        }
+    };
+
+    let mut current = left_brace.range;
+    loop {
+        let token = token_after(input, &current);
+        match token {
+            RawToken { kind: TokenKind::Rbrace, .. } => {
+                break;
+            }
+
+            _ => {
+                let statement = statement_after(input, &current, table);
+                current = statement.range;
+                res.push(table.add_statement(statement));
+            }
+        }
+    }
+
+    let right_brace = {
+        match token_after(input, &current) {
+            t if t.kind == TokenKind::Rbrace => t,
+            RawToken { ref range, .. } => {
+                return Err(RawExpression {
+                    range: Range::merge(initial, range),
+                    kind: RawExpressionKind::IllegalExpression,
+                })
+            }
+        }
+    };
+
+    return Ok(StatementBlock {
+        range: Range::merge(initial, &right_brace.range),
+        statements: res,
+    });
+}
+
 fn parenthesized_expression(input: &str, range: &Range, kind: &mut ExprTable) -> RawExpression {
     let l_paren = {
-        match real_token_after(input, range) {
+        match token_after(input, range) {
             t @ RawToken { kind: TokenKind::Lparen, .. } => t,
             t => {
                 return RawExpression {
@@ -174,7 +290,7 @@ fn parenthesized_expression(input: &str, range: &Range, kind: &mut ExprTable) ->
     let expr = expression_after(input, &l_paren.range, kind, Precedence::Lowest);
 
     let r_paren = {
-        match real_token_after(input, &expr.range) {
+        match token_after(input, &expr.range) {
             t @ RawToken { kind: TokenKind::Rparen, .. } => t,
             t => {
                 return RawExpression {
@@ -211,13 +327,13 @@ fn unary_expression(
 }
 
 fn statement_after(input: &str, range: &Range, table: &mut ExprTable) -> RawStatement {
-    let statement = match real_token_after(input, range) {
+    let statement = match token_after(input, range) {
         RawToken { kind: TokenKind::Return, ref range } => return_statement(input, range, table),
         RawToken { kind: TokenKind::Let, ref range } => let_statement(input, range, table),
         _ => expression_statement(input, range, table),
     };
 
-    match real_token_after(input, &statement.range) {
+    match token_after(input, &statement.range) {
         RawToken { kind: TokenKind::Semicolon, ref range } => RawStatement {
             range: Range::merge(&statement.range, range),
             ..statement
@@ -239,7 +355,7 @@ fn let_statement(input: &str, start: &Range, table: &mut ExprTable) -> RawStatem
     };
 
     let eq = {
-        let token = real_token_after(input, &ident.range);
+        let token = token_after(input, &ident.range);
         if !matches!(token.kind, TokenKind::Assign) {
             return RawStatement {
                 range: Range::merge(start, &ident.range),
@@ -616,4 +732,70 @@ mod tests {
         );
     }
 
+    #[test]
+    fn conditional_expressions() {
+        assert_eq!(
+            parse(r#"if ( true ) { return true }"#),
+            Statement {
+                content: "if ( true ) { return true }".into(),
+                kind: StatementKind::ExprStmt {
+                    expr: Expression {
+                        content: "if ( true ) { return true }".to_string(),
+                        kind: ExpressionKind::Conditional {
+                            condition: Box::new(Expression {
+                                content: "true".to_string(),
+                                kind: ExpressionKind::LiteralBoolean,
+                            }),
+                            positive: vec!(Statement {
+                                content: "return true".to_string(),
+                                kind: StatementKind::ReturnStmt {
+                                    expr: Expression {
+                                        content: "true".to_string(),
+                                        kind: ExpressionKind::LiteralBoolean,
+                                    }
+                                },
+                            }),
+                            negative: vec![],
+                        },
+                    },
+                },
+            }
+        );
+
+        assert_eq!(
+            parse(r#"if ( false ) { return true } else { return false }"#),
+            Statement {
+                content: "if ( false ) { return true } else { return false }".into(),
+                kind: StatementKind::ExprStmt {
+                    expr: Expression {
+                        content: "if ( false ) { return true } else { return false }".to_string(),
+                        kind: ExpressionKind::Conditional {
+                            condition: Box::new(Expression {
+                                content: "false".to_string(),
+                                kind: ExpressionKind::LiteralBoolean,
+                            }),
+                            positive: vec!(Statement {
+                                content: "return true".to_string(),
+                                kind: StatementKind::ReturnStmt {
+                                    expr: Expression {
+                                        content: "true".to_string(),
+                                        kind: ExpressionKind::LiteralBoolean,
+                                    }
+                                },
+                            }),
+                            negative: vec!(Statement {
+                                content: "return false".to_string(),
+                                kind: StatementKind::ReturnStmt {
+                                    expr: Expression {
+                                        content: "false".to_string(),
+                                        kind: ExpressionKind::LiteralBoolean,
+                                    }
+                                },
+                            }),
+                        },
+                    },
+                },
+            }
+        );
+    }
 }

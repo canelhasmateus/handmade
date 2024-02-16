@@ -97,7 +97,7 @@ fn literal_kind(value: char) -> LiteralKind {
     }
 }
 
-pub fn token_after(input: &str, range: &Range) -> RawToken {
+pub fn raw_token_after(input: &str, range: &Range) -> RawToken {
     let start = min(range.end, input.len());
     let rest = &input[start..];
     let ch = rest.chars().nth(0).unwrap_or('\0');
@@ -184,11 +184,11 @@ pub fn token_after(input: &str, range: &Range) -> RawToken {
     };
 }
 
-pub fn real_token_after(input: &str, range: &Range) -> RawToken {
-    let mut token = token_after(input, range);
+pub fn token_after(input: &str, range: &Range) -> RawToken {
+    let mut token = raw_token_after(input, range);
 
     while matches!(token.kind, TokenKind::Blank) {
-        token = token_after(input, &token.range);
+        token = raw_token_after(input, &token.range);
     }
 
     return token;
@@ -197,7 +197,7 @@ pub fn real_token_after(input: &str, range: &Range) -> RawToken {
 pub fn raw_tokens(input: &str) -> impl Iterator<Item = RawToken> + '_ {
     let mut current = Range::new(0, 0);
     std::iter::from_fn(move || {
-        let token = token_after(input, &current);
+        let token = raw_token_after(input, &current);
         current = token.range;
         if token.kind == Eof {
             None
