@@ -165,25 +165,19 @@ fn expression_after(
 }
 
 fn function_expression(input: &str, start: &Range, table: &mut ExprTable) -> RawExpression {
-    let lp = match token_after(input, start) {
-        t if t.kind == TokenKind::Lparen => t,
-        RawToken { ref range, .. } => {
-            return RawExpression {
-                range: Range::merge(start, range),
-                kind: RawExpressionKind::IllegalExpression,
-            }
-        }
+    let left_paren = match expect_token(input, start, start, TokenKind::Lparen) {
+        Ok(token) => token,
+        Err(expr) => return expr,
     };
 
     let (parameters, range) = {
-        let expr_list = expression_list(input, &lp.range, table, TokenKind::Rparen);
+        let ExpressionList { expressions, range } =
+            expression_list(input, &left_paren.range, table, TokenKind::Rparen);
         let mut names: Vec<ExpressionId> = vec![];
-        let mut final_range = Range::new(0, 0);
-        for expr in expr_list.expressions {
+        for expr in expressions {
             match expr {
                 expr if matches!(expr.kind, RawExpressionKind::Identifier) => {
-                    final_range = expr.range;
-                    names.push(table.add_expression(expr));
+                    names.push(table.add_expression(expr))
                 }
                 _ => {
                     return RawExpression {
@@ -193,23 +187,19 @@ fn function_expression(input: &str, start: &Range, table: &mut ExprTable) -> Raw
                 }
             }
         }
-        (names, final_range)
+        (names, range)
     };
 
-    let rp = match token_after(input, &range) {
-        t if t.kind == TokenKind::Rparen => t,
-        RawToken { ref range, .. } => {
-            return RawExpression {
-                range: Range::merge(start, range),
-                kind: RawExpressionKind::IllegalExpression,
-            }
-        }
+    let right_paren = match expect_token(input, start, &range, TokenKind::Rparen) {
+        Ok(token) => token,
+        Err(expr) => return expr,
     };
 
-    let StatementBlock { statements, ref range } = match statement_block(input, &rp.range, table) {
-        Ok(block) => block,
-        Err(e) => return e,
-    };
+    let StatementBlock { statements, ref range } =
+        match statement_block(input, &right_paren.range, table) {
+            Ok(block) => block,
+            Err(e) => return e,
+        };
 
     RawExpression {
         range: Range::merge(start, range),
@@ -218,35 +208,19 @@ fn function_expression(input: &str, start: &Range, table: &mut ExprTable) -> Raw
 }
 
 fn conditional_expression(input: &str, start: &Range, table: &mut ExprTable) -> RawExpression {
-    let lp = {
-        let token = token_after(input, start);
-        match token.kind {
-            TokenKind::Lparen => token,
-            k => {
-                return RawExpression {
-                    range: Range::merge(start, &token.range),
-                    kind: RawExpressionKind::IllegalExpression,
-                }
-            }
-        }
+    let left_paren = match expect_token(input, start, start, TokenKind::Lparen) {
+        Ok(token) => token,
+        Err(expr) => return expr,
     };
 
-    let condition = expression_after(input, &lp.range, table, Precedence::Lowest);
+    let condition = expression_after(input, &left_paren.range, table, Precedence::Lowest);
 
-    let rp = {
-        let token = token_after(input, &condition.range);
-        match token.kind {
-            TokenKind::Rparen => token,
-            k => {
-                return RawExpression {
-                    range: Range::merge(start, &token.range),
-                    kind: RawExpressionKind::IllegalExpression,
-                }
-            }
-        }
+    let right_paren = match expect_token(input, start, &condition.range, TokenKind::Rparen) {
+        Ok(token) => token,
+        Err(expr) => return expr,
     };
 
-    let positive = match statement_block(input, &rp.range, table) {
+    let positive = match statement_block(input, &right_paren.range, table) {
         Ok(o) => o,
         Err(expr) => return expr,
     };
@@ -274,34 +248,20 @@ fn conditional_expression(input: &str, start: &Range, table: &mut ExprTable) -> 
 }
 
 fn parenthesized_expression(input: &str, start: &Range, kind: &mut ExprTable) -> RawExpression {
-    let l_paren = {
-        match token_after(input, start) {
-            t @ RawToken { kind: TokenKind::Lparen, .. } => t,
-            t => {
-                return RawExpression {
-                    range: t.range,
-                    kind: RawExpressionKind::IllegalExpression,
-                }
-            }
-        }
+    let left_paren = match expect_token(input, start, start, TokenKind::Lparen) {
+        Ok(token) => token,
+        Err(expr) => return expr,
     };
 
-    let expr = expression_after(input, &l_paren.range, kind, Precedence::Lowest);
+    let expr = expression_after(input, &left_paren.range, kind, Precedence::Lowest);
 
-    let r_paren = {
-        match token_after(input, &expr.range) {
-            t @ RawToken { kind: TokenKind::Rparen, .. } => t,
-            t => {
-                return RawExpression {
-                    range: t.range,
-                    kind: RawExpressionKind::IllegalExpression,
-                }
-            }
-        }
+    let right_paren = match expect_token(input, start, &expr.range, TokenKind::Rparen) {
+        Ok(token) => token,
+        Err(expr) => return expr,
     };
 
     RawExpression {
-        range: Range::merge(start, &r_paren.range),
+        range: Range::merge(start, &right_paren.range),
         ..expr
     }
 }
@@ -407,27 +367,16 @@ fn statement_block(
 ) -> Result<StatementBlock, RawExpression> {
     let mut res: Vec<StatementId> = Vec::new();
 
-    let left_brace = {
-        match token_after(input, start) {
-            t if t.kind == TokenKind::Lbrace => t,
-            RawToken { ref range, .. } => {
-                return Err(RawExpression {
-                    range: Range::merge(start, range),
-                    kind: RawExpressionKind::LiteralInteger,
-                })
-            }
-        }
+    let left_brace = match expect_token(input, start, start, TokenKind::Lbrace) {
+        Ok(token) => token,
+        Err(expr) => return Err(expr),
     };
 
     let mut current = left_brace.range;
     loop {
-        let token = token_after(input, &current);
-        match token {
-            RawToken { kind: TokenKind::Rbrace, .. } => {
-                break;
-            }
-
-            _ => {
+        match expect_token(input, start, &current, TokenKind::Rbrace) {
+            Ok(_) => break,
+            Err(_) => {
                 let statement = statement_after(input, &current, table);
                 current = statement.range;
                 res.push(table.add_statement(statement));
@@ -435,16 +384,9 @@ fn statement_block(
         }
     }
 
-    let right_brace = {
-        match token_after(input, &current) {
-            t if t.kind == TokenKind::Rbrace => t,
-            RawToken { ref range, .. } => {
-                return Err(RawExpression {
-                    range: Range::merge(start, range),
-                    kind: RawExpressionKind::IllegalExpression,
-                })
-            }
-        }
+    let right_brace = match expect_token(input, start, &current, TokenKind::Rbrace) {
+        Ok(token) => token,
+        Err(expr) => return Err(expr),
     };
 
     return Ok(StatementBlock {
@@ -476,6 +418,21 @@ fn expression_list(
     ExpressionList {
         range: Range::merge(start, &current),
         expressions: res,
+    }
+}
+
+fn expect_token(
+    input: &str,
+    start: &Range,
+    range: &Range,
+    expected: TokenKind,
+) -> Result<RawToken, RawExpression> {
+    match token_after(input, range) {
+        t if t.kind == expected => Ok(t),
+        RawToken { ref range, .. } => Err(RawExpression {
+            range: Range::merge(start, range),
+            kind: RawExpressionKind::IllegalExpression,
+        }),
     }
 }
 #[cfg(test)]
