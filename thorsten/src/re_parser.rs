@@ -160,7 +160,45 @@ fn expression_after(
         RawToken { kind: TokenKind::Function, ref range } => {
             function_expression(input, range, table)
         }
+
+        RawToken { kind: TokenKind::Lbrace, .. } => hash_expression(input, range, table),
+
         _ => todo!(),
+    }
+}
+
+fn hash_expression(input: &str, start: &Range, table: &mut ExprTable) -> RawExpression {
+    let left_brace = match expect_token(input, start, start, TokenKind::Lbrace) {
+        Ok(token) => token,
+        Err(expr) => return expr,
+    };
+
+    let mut values: Vec<(ExpressionId, ExpressionId)> = vec![];
+    let mut current = left_brace.range;
+    loop {
+        if let RawToken { kind: TokenKind::Rbrace, range } = token_after(input, &current) {
+            current = range;
+            break;
+        }
+
+        let key = expression_after(input, &current, table, Precedence::Lowest);
+        let colon = match expect_token(input, start, &key.range, TokenKind::Colon) {
+            Ok(t) => t,
+            Err(e) => return e,
+        };
+        let value = expression_after(input, &colon.range, table, Precedence::Lowest);
+        if let RawToken { kind: TokenKind::Comma, range } = token_after(input, &value.range) {
+            current = range
+        } else {
+            current = value.range;
+        }
+
+        values.push((table.add_expression(key), table.add_expression(value)));
+    }
+
+    RawExpression {
+        range: Range::merge(start, &current),
+        kind: RawExpressionKind::LiteralHash { values },
     }
 }
 
@@ -429,7 +467,7 @@ fn expect_token(
 ) -> Result<RawToken, RawExpression> {
     match token_after(input, range) {
         t if t.kind == expected => Ok(t),
-        RawToken { ref range, .. } => Err(RawExpression {
+        RawToken { kind, ref range } => Err(RawExpression {
             range: Range::merge(start, range),
             kind: RawExpressionKind::IllegalExpression,
         }),
@@ -864,6 +902,39 @@ mod tests {
                                     }
                                 },
                             }],
+                        },
+                    },
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn hash_expressions() {
+        assert_eq!(
+            parse(r#"{"one" : -1, }"#),
+            Statement {
+                content: r#"{"one" : -1, }"#.into(),
+                kind: StatementKind::ExprStmt {
+                    expr: Expression {
+                        content: r#"{"one" : -1, }"#.to_string(),
+                        kind: ExpressionKind::LiteralHash {
+                            values: vec![(
+                                Expression {
+                                    content: r#""one""#.to_string(),
+                                    kind: ExpressionKind::LiteralString
+                                },
+                                Expression {
+                                    content: "-1".to_string(),
+                                    kind: ExpressionKind::Unary {
+                                        op: UnaryOp::OpNeg,
+                                        expr: Box::new(Expression {
+                                            content: "1".to_string(),
+                                            kind: ExpressionKind::LiteralInteger,
+                                        }),
+                                    },
+                                }
+                            )],
                         },
                     },
                 },
