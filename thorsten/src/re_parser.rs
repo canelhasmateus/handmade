@@ -1,4 +1,4 @@
-use crate::re_lexer::{token_after, Range, RawToken, TokenKind};
+use crate::re_lexer::{Range, RawToken, token_after, TokenKind};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Ord, PartialOrd)]
 pub struct StatementId(usize);
@@ -94,6 +94,20 @@ pub enum Precedence {
     Index,
 }
 
+impl From<&RawToken> for Precedence {
+    fn from(value: &RawToken) -> Self {
+        match value.kind {
+            TokenKind::Plus | TokenKind::Minus => Precedence::Sum,
+            TokenKind::Asterisk | TokenKind::Slash => Precedence::Product,
+            TokenKind::Lt | TokenKind::Gt => Precedence::LesserGreater,
+            TokenKind::Equals | TokenKind::Differs => Precedence::Equals,
+            TokenKind::Lparen => Precedence::Apply,
+            TokenKind::LBracket => Precedence::Index,
+            _ => Precedence::Lowest,
+        }
+    }
+}
+
 struct ExprTable {
     statements: Vec<RawStatement>,
     expressions: Vec<RawExpression>,
@@ -127,7 +141,7 @@ fn expression_after(
     table: &mut ExprTable,
     precedence: Precedence,
 ) -> RawExpression {
-    match token_after(input, range) {
+    let mut left_expr = match token_after(input, range) {
         RawToken {
             kind: TokenKind::True | TokenKind::False,
             range,
@@ -149,21 +163,81 @@ fn expression_after(
             RawExpression { range, kind: RawExpressionKind::LiteralString }
         }
 
-        RawToken { kind, ref range } if matches!(kind, TokenKind::Bang | TokenKind::Minus) => {
-            unary_expression(input, range, kind, table)
-        }
-
         RawToken { kind: TokenKind::If, ref range } => conditional_expression(input, range, table),
 
         RawToken { kind: TokenKind::Function, ref range } => {
             function_expression(input, range, table)
         }
 
+        RawToken { kind, ref range } if matches!(kind, TokenKind::Bang | TokenKind::Minus) => {
+            unary_expression(input, range, kind, table)
+        }
+
         RawToken { kind: TokenKind::Lparen, .. } => parenthesized_expression(input, range, table),
         RawToken { kind: TokenKind::Lbrace, .. } => hash_expression(input, range, table),
         RawToken { kind: TokenKind::LBracket, .. } => array_expression(input, range, table),
 
-        _ => todo!(),
+        RawToken { range, .. } => RawExpression {
+            range,
+            kind: RawExpressionKind::LiteralInteger,
+        },
+    };
+
+    loop {
+        let next_token = token_after(input, &left_expr.range);
+        let next_precedence = Precedence::from(&next_token);
+        if precedence >= next_precedence {
+            break;
+        }
+
+        left_expr = match next_token.kind {
+            TokenKind::Lparen => call_expression(input, left_expr, table),
+            // TokenKind::LBracket => {
+            // let idx = self.expression_after(&next_token.span, ExpressionPrecedence::Lowest);
+            // let after = self.lexer.semantic_token_after(&idx.span);
+            // if after.kind != Rbracket {
+            //     return Expression {
+            //         span: Span {
+            //             start: next_token.span.start,
+            //             end: after.span.end,
+            //         },
+            //         kind: IllegalExpression { value: "illegal".into() },
+            //     };
+            // }
+            // return Expression {
+            //     span: Span {
+            //         start: next_token.span.start,
+            //         end: after.span.end,
+            //     },
+            //     kind: IndexExpression { left: Box::from(left), idx: Box::from(idx) },
+            // };
+            // }
+            _ => todo!(),
+        }
+    }
+
+    return left_expr;
+}
+
+fn call_expression(input: &str, left: RawExpression, table: &mut ExprTable) -> RawExpression {
+    let left_paren = match expect_token(input, &left.range, &left.range, TokenKind::Lparen) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let ExpressionList { ref range, expressions } =
+        expression_list(input, &left_paren.range, table, TokenKind::Rparen);
+
+    let right_paren = match expect_token(input, &left.range, range, TokenKind::Rparen) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+
+    RawExpression {
+        range: Range::merge(&left.range, &right_paren.range),
+        kind: RawExpressionKind::Call {
+            function: table.add_expression(left),
+            arguments: expressions,
+        },
     }
 }
 
@@ -480,8 +554,8 @@ fn expect_token(
 mod tests {
     use crate::re_lexer::Range;
     use crate::re_parser::{
-        statement_after, BinaryOp, ExprTable, ExpressionId, RawExpression, RawExpressionKind,
-        RawStatement, RawStatementKind, StatementId, UnaryOp,
+        BinaryOp, ExpressionId, ExprTable, RawExpression, RawExpressionKind, RawStatement,
+        RawStatementKind, statement_after, StatementId, UnaryOp,
     };
 
     #[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]
@@ -985,6 +1059,37 @@ mod tests {
                                         }],
                                     },
                                 },
+                            ],
+                        },
+                    },
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn call_expressions() {
+        assert_eq!(
+            parse(r#"addTwo(2,3)"#),
+            Statement {
+                content: r#"addTwo(2,3)"#.into(),
+                kind: StatementKind::ExprStmt {
+                    expr: Expression {
+                        content: r#"addTwo(2,3)"#.to_string(),
+                        kind: ExpressionKind::Call {
+                            function: Box::new(Expression {
+                                content: "addTwo".to_string(),
+                                kind: ExpressionKind::Identifier,
+                            }),
+                            arguments: vec![
+                                Expression {
+                                    content: "2".to_string(),
+                                    kind: ExpressionKind::LiteralInteger,
+                                },
+                                Expression {
+                                    content: "3".to_string(),
+                                    kind: ExpressionKind::LiteralInteger,
+                                }
                             ],
                         },
                     },
