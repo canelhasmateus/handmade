@@ -153,17 +153,37 @@ fn expression_after(
             unary_expression(input, range, kind, table)
         }
 
-        RawToken { kind: TokenKind::Lparen, .. } => parenthesized_expression(input, range, table),
-
         RawToken { kind: TokenKind::If, ref range } => conditional_expression(input, range, table),
 
         RawToken { kind: TokenKind::Function, ref range } => {
             function_expression(input, range, table)
         }
 
+        RawToken { kind: TokenKind::Lparen, .. } => parenthesized_expression(input, range, table),
         RawToken { kind: TokenKind::Lbrace, .. } => hash_expression(input, range, table),
+        RawToken { kind: TokenKind::LBracket, .. } => array_expression(input, range, table),
 
         _ => todo!(),
+    }
+}
+
+fn array_expression(input: &str, start: &Range, table: &mut ExprTable) -> RawExpression {
+    let left_brace = match expect_token(input, start, start, TokenKind::LBracket) {
+        Ok(token) => token,
+        Err(expr) => return expr,
+    };
+
+    let ExpressionList { ref range, expressions } =
+        expression_list(input, &left_brace.range, table, TokenKind::RBracket);
+
+    let right_brace = match expect_token(input, start, range, TokenKind::RBracket) {
+        Ok(token) => token,
+        Err(expr) => return expr,
+    };
+
+    RawExpression {
+        range: Range::merge(start, &right_brace.range),
+        kind: RawExpressionKind::LiteralArray { values: expressions },
     }
 }
 
@@ -208,25 +228,8 @@ fn function_expression(input: &str, start: &Range, table: &mut ExprTable) -> Raw
         Err(expr) => return expr,
     };
 
-    let (parameters, range) = {
-        let ExpressionList { expressions, range } =
-            expression_list(input, &left_paren.range, table, TokenKind::Rparen);
-        let mut names: Vec<ExpressionId> = vec![];
-        for expr in expressions {
-            match expr {
-                expr if matches!(expr.kind, RawExpressionKind::Identifier) => {
-                    names.push(table.add_expression(expr))
-                }
-                _ => {
-                    return RawExpression {
-                        range: expr.range,
-                        kind: RawExpressionKind::IllegalExpression,
-                    }
-                }
-            }
-        }
-        (names, range)
-    };
+    let ExpressionList { expressions, range } =
+        expression_list(input, &left_paren.range, table, TokenKind::Rparen);
 
     let right_paren = match expect_token(input, start, &range, TokenKind::Rparen) {
         Ok(token) => token,
@@ -241,7 +244,7 @@ fn function_expression(input: &str, start: &Range, table: &mut ExprTable) -> Raw
 
     RawExpression {
         range: Range::merge(start, range),
-        kind: RawExpressionKind::LiteralFunction { parameters: parameters, body: statements },
+        kind: RawExpressionKind::LiteralFunction { parameters: expressions, body: statements },
     }
 }
 
@@ -395,7 +398,7 @@ struct StatementBlock {
 
 struct ExpressionList {
     range: Range,
-    expressions: Vec<RawExpression>,
+    expressions: Vec<ExpressionId>,
 }
 
 fn statement_block(
@@ -439,7 +442,7 @@ fn expression_list(
     table: &mut ExprTable,
     end: TokenKind,
 ) -> ExpressionList {
-    let mut res: Vec<RawExpression> = vec![];
+    let mut res: Vec<ExpressionId> = vec![];
     let mut current = Range::merge(start, start);
     loop {
         match token_after(input, &current) {
@@ -448,7 +451,7 @@ fn expression_list(
             _ => {
                 let expression = expression_after(input, &current, table, Precedence::Lowest);
                 current = expression.range;
-                res.push(expression)
+                res.push(table.add_expression(expression))
             }
         }
     }
@@ -935,6 +938,54 @@ mod tests {
                                     },
                                 }
                             )],
+                        },
+                    },
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn array_expressions() {
+        assert_eq!(
+            parse(r#"[-1, "one", fn(a, b){ return true }]"#),
+            Statement {
+                content: r#"[-1, "one", fn(a, b){ return true }]"#.into(),
+                kind: StatementKind::ExprStmt {
+                    expr: Expression {
+                        content: r#"[-1, "one", fn(a, b){ return true }]"#.to_string(),
+                        kind: ExpressionKind::LiteralArray {
+                            values: vec![
+                                Expression {
+                                    content: "-1".to_string(),
+                                    kind: ExpressionKind::Unary {
+                                        op: UnaryOp::OpNeg,
+                                        expr: Box::new(Expression {
+                                            content: "1".to_string(),
+                                            kind: ExpressionKind::LiteralInteger,
+                                        }),
+                                    },
+                                },
+                                Expression {
+                                    content: r#""one""#.to_string(),
+                                    kind: ExpressionKind::LiteralString,
+                                },
+                                Expression {
+                                    content: "fn(a, b){ return true }".to_string(),
+                                    kind: ExpressionKind::LiteralFunction {
+                                        parameters: vec!["a".into(), "b".into()],
+                                        body: vec![Statement {
+                                            content: "return true".to_string(),
+                                            kind: StatementKind::ReturnStmt {
+                                                expr: Expression {
+                                                    content: "true".to_string(),
+                                                    kind: ExpressionKind::LiteralBoolean,
+                                                }
+                                            },
+                                        }],
+                                    },
+                                },
+                            ],
                         },
                     },
                 },
