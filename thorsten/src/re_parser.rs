@@ -1,4 +1,4 @@
-use crate::re_lexer::{Range, RawToken, token_after, TokenKind};
+use crate::re_lexer::{token_after, Range, RawToken, TokenKind};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Ord, PartialOrd)]
 pub struct StatementId(usize);
@@ -192,6 +192,7 @@ fn expression_after(
 
         left_expr = match next_token.kind {
             TokenKind::Lparen => call_expression(input, left_expr, table),
+            TokenKind::LBracket => index_expression(input, left_expr, table),
             // TokenKind::LBracket => {
             // let idx = self.expression_after(&next_token.span, ExpressionPrecedence::Lowest);
             // let after = self.lexer.semantic_token_after(&idx.span);
@@ -217,6 +218,28 @@ fn expression_after(
     }
 
     return left_expr;
+}
+
+fn index_expression(input: &str, left: RawExpression, table: &mut ExprTable) -> RawExpression {
+    let left_bracket = match expect_token(input, &left.range, &left.range, TokenKind::LBracket) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+
+    let expr = expression_after(input, &left_bracket.range, table, Precedence::Index);
+
+    let right_bracket = match expect_token(input, &left.range, &expr.range, TokenKind::RBracket) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+
+    RawExpression {
+        range: Range::merge(&left.range, &right_bracket.range),
+        kind: RawExpressionKind::IndexExpression {
+            left: table.add_expression(left),
+            idx: table.add_expression(expr),
+        },
+    }
 }
 
 fn call_expression(input: &str, left: RawExpression, table: &mut ExprTable) -> RawExpression {
@@ -554,8 +577,8 @@ fn expect_token(
 mod tests {
     use crate::re_lexer::Range;
     use crate::re_parser::{
-        BinaryOp, ExpressionId, ExprTable, RawExpression, RawExpressionKind, RawStatement,
-        RawStatementKind, statement_after, StatementId, UnaryOp,
+        statement_after, BinaryOp, ExprTable, ExpressionId, RawExpression, RawExpressionKind,
+        RawStatement, RawStatementKind, StatementId, UnaryOp,
     };
 
     #[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]
@@ -1091,6 +1114,31 @@ mod tests {
                                     kind: ExpressionKind::LiteralInteger,
                                 }
                             ],
+                        },
+                    },
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn index_expressions() {
+        assert_eq!(
+            parse(r#"identifier[2]"#),
+            Statement {
+                content: r#"identifier[2]"#.into(),
+                kind: StatementKind::ExprStmt {
+                    expr: Expression {
+                        content: r#"identifier[2]"#.to_string(),
+                        kind: ExpressionKind::IndexExpression {
+                            left: Box::new(Expression {
+                                content: "identifier".to_string(),
+                                kind: ExpressionKind::Identifier,
+                            }),
+                            idx: Box::new(Expression {
+                                content: "2".to_string(),
+                                kind: ExpressionKind::LiteralInteger,
+                            }),
                         },
                     },
                 },
