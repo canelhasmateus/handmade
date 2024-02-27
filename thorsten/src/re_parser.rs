@@ -1,4 +1,4 @@
-use crate::re_lexer::{token_after, Range, RawToken, TokenKind};
+use crate::re_lexer::{Range, RawToken, token_after, TokenKind};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Ord, PartialOrd)]
 pub struct StatementId(usize);
@@ -94,9 +94,9 @@ pub enum Precedence {
     Index,
 }
 
-impl From<&RawToken> for Precedence {
-    fn from(value: &RawToken) -> Self {
-        match value.kind {
+impl From<&TokenKind> for Precedence {
+    fn from(value: &TokenKind) -> Self {
+        match value {
             TokenKind::Plus | TokenKind::Minus => Precedence::Sum,
             TokenKind::Asterisk | TokenKind::Slash => Precedence::Product,
             TokenKind::Lt | TokenKind::Gt => Precedence::LesserGreater,
@@ -184,40 +184,65 @@ fn expression_after(
     };
 
     loop {
-        let next_token = token_after(input, &left_expr.range);
-        let next_precedence = Precedence::from(&next_token);
+        let RawToken { ref kind, .. } = token_after(input, &left_expr.range);
+        let next_precedence = Precedence::from(kind);
         if precedence >= next_precedence {
             break;
         }
 
-        left_expr = match next_token.kind {
+        left_expr = match kind {
             TokenKind::Lparen => call_expression(input, left_expr, table),
             TokenKind::LBracket => index_expression(input, left_expr, table),
-            // TokenKind::LBracket => {
-            // let idx = self.expression_after(&next_token.span, ExpressionPrecedence::Lowest);
-            // let after = self.lexer.semantic_token_after(&idx.span);
-            // if after.kind != Rbracket {
-            //     return Expression {
-            //         span: Span {
-            //             start: next_token.span.start,
-            //             end: after.span.end,
-            //         },
-            //         kind: IllegalExpression { value: "illegal".into() },
-            //     };
-            // }
-            // return Expression {
-            //     span: Span {
-            //         start: next_token.span.start,
-            //         end: after.span.end,
-            //     },
-            //     kind: IndexExpression { left: Box::from(left), idx: Box::from(idx) },
-            // };
-            // }
-            _ => todo!(),
-        }
+
+            TokenKind::Plus => binary_expression(input, left_expr, table, next_precedence),
+            TokenKind::Minus => binary_expression(input, left_expr, table, next_precedence),
+            TokenKind::Asterisk => binary_expression(input, left_expr, table, next_precedence),
+            TokenKind::Slash => binary_expression(input, left_expr, table, next_precedence),
+            TokenKind::Lt => binary_expression(input, left_expr, table, next_precedence),
+            TokenKind::Gt => binary_expression(input, left_expr, table, next_precedence),
+            TokenKind::Equals => binary_expression(input, left_expr, table, next_precedence),
+            TokenKind::Differs => binary_expression(input, left_expr, table, next_precedence),
+
+            _ => left_expr,
+        };
     }
 
     return left_expr;
+}
+
+fn binary_expression(
+    input: &str,
+    left: RawExpression,
+    table: &mut ExprTable,
+    next_precedence: Precedence,
+) -> RawExpression {
+    let RawToken { ref kind, ref range } = token_after(input, &left.range);
+    let op = match kind {
+        TokenKind::Plus => BinaryOp::OpPlus,
+        TokenKind::Minus => BinaryOp::OpMinus,
+        TokenKind::Asterisk => BinaryOp::OpTimes,
+        TokenKind::Slash => BinaryOp::OpDiv,
+        TokenKind::Lt => BinaryOp::OpLesser,
+        TokenKind::Gt => BinaryOp::OpGreater,
+        TokenKind::Equals => BinaryOp::OpEquals,
+        TokenKind::Differs => BinaryOp::OpDiffers,
+        _ => {
+            return RawExpression {
+                range: Range::merge(&left.range, range),
+                kind: RawExpressionKind::IllegalExpression,
+            }
+        }
+    };
+
+    let right = expression_after(input, range, table, next_precedence);
+    RawExpression {
+        range: Range::merge(&left.range, &right.range),
+        kind: RawExpressionKind::Binary {
+            op,
+            left: table.add_expression(left),
+            right: table.add_expression(right),
+        },
+    }
 }
 
 fn index_expression(input: &str, left: RawExpression, table: &mut ExprTable) -> RawExpression {
@@ -567,7 +592,7 @@ fn expect_token(
 ) -> Result<RawToken, RawExpression> {
     match token_after(input, range) {
         t if t.kind == expected => Ok(t),
-        RawToken { kind, ref range } => Err(RawExpression {
+        RawToken { kind: _kind, ref range } => Err(RawExpression {
             range: Range::merge(start, range),
             kind: RawExpressionKind::IllegalExpression,
         }),
@@ -577,8 +602,8 @@ fn expect_token(
 mod tests {
     use crate::re_lexer::Range;
     use crate::re_parser::{
-        statement_after, BinaryOp, ExprTable, ExpressionId, RawExpression, RawExpressionKind,
-        RawStatement, RawStatementKind, StatementId, UnaryOp,
+        BinaryOp, ExpressionId, ExprTable, RawExpression, RawExpressionKind, RawStatement,
+        RawStatementKind, statement_after, StatementId, UnaryOp,
     };
 
     #[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]
@@ -1137,6 +1162,32 @@ mod tests {
                             }),
                             idx: Box::new(Expression {
                                 content: "2".to_string(),
+                                kind: ExpressionKind::LiteralInteger,
+                            }),
+                        },
+                    },
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn binary_expressions() {
+        assert_eq!(
+            parse(r#"2 + 3"#),
+            Statement {
+                content: r#"2 + 3"#.into(),
+                kind: StatementKind::ExprStmt {
+                    expr: Expression {
+                        content: r#"2 + 3"#.to_string(),
+                        kind: ExpressionKind::Binary {
+                            op: BinaryOp::OpPlus,
+                            left: Box::new(Expression {
+                                content: "2".to_string(),
+                                kind: ExpressionKind::LiteralInteger,
+                            }),
+                            right: Box::new(Expression {
+                                content: "3".to_string(),
                                 kind: ExpressionKind::LiteralInteger,
                             }),
                         },
