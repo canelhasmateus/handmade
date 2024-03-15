@@ -1,8 +1,6 @@
+use crate::re_lexer::TokenKind::Eof;
 use std::cmp::min;
 use std::ops::Index;
-use std::slice::SliceIndex;
-
-use crate::re_lexer::TokenKind::Eof;
 
 #[derive(Debug, Eq, PartialEq, Default, Copy, Clone)]
 pub struct Range {
@@ -14,16 +12,16 @@ impl Index<Range> for str {
     type Output = str;
 
     fn index(&self, index: Range) -> &Self::Output {
-        return &self[index.start..index.end];
+        &self[index.start..index.end]
     }
 }
 
 impl Range {
     pub fn new(start: usize, end: usize) -> Range {
-        return Range { start, end };
+        Range { start, end }
     }
     pub fn merge(start: &Range, end: &Range) -> Range {
-        return Range { start: start.start, end: end.end };
+        Range { start: start.start, end: end.end }
     }
 }
 
@@ -178,10 +176,10 @@ pub fn raw_token_after(input: &str, range: &Range) -> RawToken {
         }
     };
 
-    return RawToken {
+    RawToken {
         kind,
-        range: Range { start: start, end: start + len },
-    };
+        range: Range { start, end: start + len },
+    }
 }
 
 pub fn token_after(input: &str, range: &Range) -> RawToken {
@@ -191,7 +189,7 @@ pub fn token_after(input: &str, range: &Range) -> RawToken {
         token = raw_token_after(input, &token.range);
     }
 
-    return token;
+    token
 }
 
 pub fn raw_tokens(input: &str) -> impl Iterator<Item = RawToken> + '_ {

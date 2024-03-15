@@ -1,4 +1,4 @@
-use crate::re_lexer::{Range, RawToken, token_after, TokenKind};
+use crate::re_lexer::{token_after, Range, RawToken, TokenKind};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Ord, PartialOrd)]
 pub struct StatementId(usize);
@@ -72,18 +72,18 @@ pub enum UnaryOp {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Ord, PartialOrd)]
 pub enum BinaryOp {
-    OpPlus,
-    OpMinus,
-    OpTimes,
-    OpDiv,
-    OpGreater,
-    OpLesser,
-    OpEquals,
-    OpDiffers,
+    Plus,
+    Minus,
+    Times,
+    Div,
+    Greater,
+    Lesser,
+    Equals,
+    Differs,
 }
 
 #[derive(Clone, Copy, PartialOrd, PartialEq)]
-pub enum Precedence {
+enum Precedence {
     Lowest,
     Equals,
     LesserGreater,
@@ -117,13 +117,13 @@ impl ExprTable {
     fn add_statement(&mut self, statement: RawStatement) -> StatementId {
         let id = self.statements.len();
         self.statements.push(statement);
-        return StatementId(id);
+        StatementId(id)
     }
 
     fn add_expression(&mut self, expression: RawExpression) -> ExpressionId {
         let id = self.expressions.len();
         self.expressions.push(expression);
-        return ExpressionId(id);
+        ExpressionId(id)
     }
 
     fn get_statement(&self, id: &StatementId) -> &RawStatement {
@@ -207,7 +207,7 @@ fn expression_after(
         };
     }
 
-    return left_expr;
+    left_expr
 }
 
 fn binary_expression(
@@ -218,14 +218,14 @@ fn binary_expression(
 ) -> RawExpression {
     let RawToken { ref kind, ref range } = token_after(input, &left.range);
     let op = match kind {
-        TokenKind::Plus => BinaryOp::OpPlus,
-        TokenKind::Minus => BinaryOp::OpMinus,
-        TokenKind::Asterisk => BinaryOp::OpTimes,
-        TokenKind::Slash => BinaryOp::OpDiv,
-        TokenKind::Lt => BinaryOp::OpLesser,
-        TokenKind::Gt => BinaryOp::OpGreater,
-        TokenKind::Equals => BinaryOp::OpEquals,
-        TokenKind::Differs => BinaryOp::OpDiffers,
+        TokenKind::Plus => BinaryOp::Plus,
+        TokenKind::Minus => BinaryOp::Minus,
+        TokenKind::Asterisk => BinaryOp::Times,
+        TokenKind::Slash => BinaryOp::Div,
+        TokenKind::Lt => BinaryOp::Lesser,
+        TokenKind::Gt => BinaryOp::Greater,
+        TokenKind::Equals => BinaryOp::Equals,
+        TokenKind::Differs => BinaryOp::Differs,
         _ => {
             return RawExpression {
                 range: Range::merge(&left.range, range),
@@ -488,13 +488,13 @@ fn let_statement(input: &str, start: &Range, table: &mut ExprTable) -> RawStatem
     };
 
     let expr = expression_after(input, &eq.range, table, Precedence::Lowest);
-    return RawStatement {
+    RawStatement {
         range: Range::merge(start, &expr.range),
         kind: RawStatementKind::LetStmt {
             name: table.add_expression(ident),
             expr: table.add_expression(expr),
         },
-    };
+    }
 }
 
 fn return_statement(input: &str, start: &Range, table: &mut ExprTable) -> RawStatement {
@@ -507,10 +507,10 @@ fn return_statement(input: &str, start: &Range, table: &mut ExprTable) -> RawSta
 
 fn expression_statement(input: &str, start: &Range, table: &mut ExprTable) -> RawStatement {
     let expr = expression_after(input, start, table, Precedence::Lowest);
-    return RawStatement {
+    RawStatement {
         range: expr.range,
         kind: RawStatementKind::ExprStmt { expr: table.add_expression(expr) },
-    };
+    }
 }
 
 struct StatementBlock {
@@ -552,10 +552,10 @@ fn statement_block(
         Err(expr) => return Err(expr),
     };
 
-    return Ok(StatementBlock {
+    Ok(StatementBlock {
         range: Range::merge(start, &right_brace.range),
         statements: res,
-    });
+    })
 }
 
 fn expression_list(
@@ -602,8 +602,8 @@ fn expect_token(
 mod tests {
     use crate::re_lexer::Range;
     use crate::re_parser::{
-        BinaryOp, ExpressionId, ExprTable, RawExpression, RawExpressionKind, RawStatement,
-        RawStatementKind, statement_after, StatementId, UnaryOp,
+        statement_after, BinaryOp, ExprTable, ExpressionId, RawExpression, RawExpressionKind,
+        RawStatement, RawStatementKind, StatementId, UnaryOp,
     };
 
     #[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]
@@ -676,7 +676,7 @@ mod tests {
         let range = Range::new(0, 0);
         let statement = statement_after(input, &range, &mut table);
 
-        return Statement {
+        Statement {
             content: input[statement.range].into(),
             kind: match statement.kind {
                 RawStatementKind::EndStatement => StatementKind::EndStatement {},
@@ -692,12 +692,12 @@ mod tests {
                     StatementKind::ExprStmt { expr: lookup_expression(input, &expr, &table) }
                 }
             },
-        };
+        }
     }
 
     fn lookup_expression(input: &str, id: &ExpressionId, table: &ExprTable) -> Expression {
         let RawExpression { range, kind } = table.get_expression(id);
-        return Expression {
+        Expression {
             content: input[range.start..range.end].into(),
             kind: match kind {
                 RawExpressionKind::LiteralInteger => ExpressionKind::LiteralInteger,
@@ -771,7 +771,7 @@ mod tests {
                     }
                 }
             },
-        };
+        }
     }
 
     fn lookup_statement(input: &str, id: &StatementId, table: &ExprTable) -> Statement {
@@ -1181,7 +1181,7 @@ mod tests {
                     expr: Expression {
                         content: r#"2 + 3"#.to_string(),
                         kind: ExpressionKind::Binary {
-                            op: BinaryOp::OpPlus,
+                            op: BinaryOp::Plus,
                             left: Box::new(Expression {
                                 content: "2".to_string(),
                                 kind: ExpressionKind::LiteralInteger,
