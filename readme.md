@@ -68,3 +68,8 @@ https://limpet.net/mbrubeck/2014/08/08/toy-layout-engine-1.html
 https://github.com/EmilHernvall/dnsguide/blob/master/README.md
 https://addons.mozilla.org/en-US/firefox/addon/copy-all-tab-urls-we/
 
+https://training.linuxfoundation.org/certification/certified-kubernetes-administrator-cka/
+https://os.phil-opp.com/
+https://recursion.wtf/posts/rust_schemes/
+https://karpathy.ai/zero-to-hero.html
+

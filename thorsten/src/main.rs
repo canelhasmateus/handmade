@@ -3,8 +3,9 @@
 mod eval;
 mod lexer;
 mod parser;
-mod re_lexer;
-mod re_parser;
+mod flat_eval;
+mod flat_lexer;
+mod flat_parser;
 
 fn main() {}
 

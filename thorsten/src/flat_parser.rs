@@ -1,4 +1,4 @@
-use crate::re_lexer::{token_after, Range, RawToken, TokenKind};
+use crate::flat_lexer::{token_after, Range, RawToken, TokenKind};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Ord, PartialOrd)]
 pub struct StatementId(usize);
@@ -28,6 +28,9 @@ pub enum RawExpressionKind {
     LiteralInteger,
     LiteralString,
     LiteralBoolean,
+    Parenthesized {
+        expr: ExpressionId,
+    },
     LiteralFunction {
         parameters: Vec<ExpressionId>,
         body: Vec<StatementId>,
@@ -108,7 +111,7 @@ impl From<&TokenKind> for Precedence {
     }
 }
 
-struct ExprTable {
+pub(crate) struct ExprTable {
     statements: Vec<RawStatement>,
     expressions: Vec<RawExpression>,
 }
@@ -179,7 +182,7 @@ fn expression_after(
 
         RawToken { range, .. } => RawExpression {
             range,
-            kind: RawExpressionKind::LiteralInteger,
+            kind: RawExpressionKind::IllegalExpression,
         },
     };
 
@@ -324,11 +327,13 @@ fn hash_expression(input: &str, start: &Range, table: &mut ExprTable) -> RawExpr
         }
 
         let key = expression_after(input, &current, table, Precedence::Lowest);
-        let colon = match expect_token(input, start, &key.range, TokenKind::Colon) {
-            Ok(t) => t,
+        let value = match expect_token(input, start, &key.range, TokenKind::Colon) {
             Err(e) => return e,
+            Ok(RawToken { ref range, .. }) => {
+                expression_after(input, range, table, Precedence::Lowest)
+            }
         };
-        let value = expression_after(input, &colon.range, table, Precedence::Lowest);
+
         if let RawToken { kind: TokenKind::Comma, range } = token_after(input, &value.range) {
             current = range
         } else {
@@ -410,13 +415,13 @@ fn conditional_expression(input: &str, start: &Range, table: &mut ExprTable) -> 
     }
 }
 
-fn parenthesized_expression(input: &str, start: &Range, kind: &mut ExprTable) -> RawExpression {
+fn parenthesized_expression(input: &str, start: &Range, table: &mut ExprTable) -> RawExpression {
     let left_paren = match expect_token(input, start, start, TokenKind::Lparen) {
         Ok(token) => token,
         Err(expr) => return expr,
     };
 
-    let expr = expression_after(input, &left_paren.range, kind, Precedence::Lowest);
+    let expr = expression_after(input, &left_paren.range, table, Precedence::Lowest);
 
     let right_paren = match expect_token(input, start, &expr.range, TokenKind::Rparen) {
         Ok(token) => token,
@@ -425,7 +430,7 @@ fn parenthesized_expression(input: &str, start: &Range, kind: &mut ExprTable) ->
 
     RawExpression {
         range: Range::merge(start, &right_paren.range),
-        ..expr
+        kind: RawExpressionKind::Parenthesized { expr: table.add_expression(expr) },
     }
 }
 
@@ -600,8 +605,8 @@ fn expect_token(
 }
 #[cfg(test)]
 mod tests {
-    use crate::re_lexer::Range;
-    use crate::re_parser::{
+    use crate::flat_lexer::Range;
+    use crate::flat_parser::{
         statement_after, BinaryOp, ExprTable, ExpressionId, RawExpression, RawExpressionKind,
         RawStatement, RawStatementKind, StatementId, UnaryOp,
     };
@@ -632,6 +637,9 @@ mod tests {
         LiteralInteger,
         LiteralString,
         LiteralBoolean,
+        Parenthesized {
+            expression: Box<Expression>,
+        },
         LiteralFunction {
             parameters: Vec<String>,
             body: Vec<Statement>,
@@ -770,6 +778,9 @@ mod tests {
                         idx: lookup_expression(input, idx, table).into(),
                     }
                 }
+                RawExpressionKind::Parenthesized { expr } => ExpressionKind::Parenthesized {
+                    expression: lookup_expression(input, expr, table).into(),
+                },
             },
         }
     }
@@ -927,13 +938,18 @@ mod tests {
                 kind: StatementKind::ExprStmt {
                     expr: Expression {
                         content: "(-2)".to_string(),
-                        kind: ExpressionKind::Unary {
-                            op: UnaryOp::OpNeg,
-                            expr: Box::new(Expression {
-                                content: "2".to_string(),
-                                kind: ExpressionKind::LiteralInteger,
-                            }),
-                        },
+                        kind: ExpressionKind::Parenthesized {
+                            expression: Box::new(Expression {
+                                content: "-2".to_string(),
+                                kind: ExpressionKind::Unary {
+                                    op: UnaryOp::OpNeg,
+                                    expr: Box::new(Expression {
+                                        content: "2".to_string(),
+                                        kind: ExpressionKind::LiteralInteger,
+                                    }),
+                                }
+                            })
+                        }
                     },
                 },
             }

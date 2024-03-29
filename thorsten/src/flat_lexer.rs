@@ -1,4 +1,4 @@
-use crate::re_lexer::TokenKind::Eof;
+use crate::flat_lexer::TokenKind::Eof;
 use std::cmp::min;
 use std::ops::Index;
 
