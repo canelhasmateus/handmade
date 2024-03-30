@@ -11,7 +11,7 @@ use crate::parser::{
 };
 
 #[derive(Debug, Eq, PartialEq, Clone, PartialOrd, Ord)]
-enum Object {
+pub enum Object {
     Integer(i32),
     Boolean(Booleans),
     Str(String),
@@ -25,7 +25,7 @@ enum Object {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Ord, PartialOrd)]
-enum Builtin {
+pub enum Builtin {
     Len,
     First,
     Last,
@@ -35,19 +35,19 @@ enum Builtin {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Ord, PartialOrd)]
-struct Function {
+pub struct Function {
     parameters: Vec<String>,
     body: StatementBlock,
     env: Environment,
 }
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone, Ord, PartialOrd)]
-enum Booleans {
+pub enum Booleans {
     True,
     False,
 }
 
-struct VM {
+pub struct VM {
     env: Environment,
 }
 
@@ -58,7 +58,7 @@ struct EnvironmentInner {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Ord, PartialOrd)]
-struct Environment {
+pub struct Environment {
     env: Rc<RefCell<EnvironmentInner>>,
 }
 
@@ -105,6 +105,11 @@ impl Environment {
             (_, _) => None,
         };
     }
+}
+
+pub fn evaluate(s: &str) -> Object {
+    let vm = VM::new();
+    return vm.eval_source(s);
 }
 
 impl VM {

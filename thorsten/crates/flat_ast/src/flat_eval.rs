@@ -12,7 +12,7 @@ use crate::flat_parser::{raw_statements, ExprTable};
 type Env = BTreeMap<String, Object>;
 
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
-enum Object {
+pub enum Object {
     Null,
     Integer(i64),
     Text(String),
@@ -23,24 +23,25 @@ enum Object {
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
-enum Return {
+pub enum Return {
     Value(Object),
     Return(Object),
     Error(String),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
-struct Function {
+pub struct Function {
     parameters: Vec<String>,
     body: Vec<StatementId>,
     env: Env,
 }
+
 struct VM<'a> {
     table: ExprTable,
     input: &'a str,
 }
 
-fn eval(input: &str) -> Object {
+pub fn eval(input: &str) -> Object {
     let mut table = ExprTable {
         statements: Vec::new(),
         expressions: Vec::new(),
@@ -153,7 +154,7 @@ impl VM<'_> {
         for expr in values {
             match self.eval_expr(expr, env) {
                 Return::Value(b) => result.push(b),
-                Return::Return(b) => unreachable!("Return expr inside a list?"),
+                Return::Return(_) => unreachable!("Return expr inside a list?"),
                 e @ Return::Error(_) => return e,
             }
         }
@@ -185,7 +186,7 @@ impl VM<'_> {
         let value = match self.eval_expr(expr, env) {
             Return::Value(v) => v,
             e @ Return::Error(_) => return e,
-            Return::Return(r) => unreachable!("Return in unary position"),
+            Return::Return(_) => unreachable!("Return in unary position"),
         };
 
         let result = match op {
