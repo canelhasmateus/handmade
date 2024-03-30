@@ -112,8 +112,8 @@ impl From<&TokenKind> for Precedence {
 }
 
 pub(crate) struct ExprTable {
-    statements: Vec<RawStatement>,
-    expressions: Vec<RawExpression>,
+    pub(crate) statements: Vec<RawStatement>,
+    pub(crate) expressions: Vec<RawExpression>,
 }
 
 impl ExprTable {
@@ -129,13 +129,26 @@ impl ExprTable {
         ExpressionId(id)
     }
 
-    fn get_statement(&self, id: &StatementId) -> &RawStatement {
+    pub(crate) fn get_statement(&self, id: &StatementId) -> &RawStatement {
         self.statements.get(id.0).unwrap()
     }
 
-    fn get_expression(&self, id: &ExpressionId) -> &RawExpression {
+    pub(crate) fn get_expression(&self, id: &ExpressionId) -> &RawExpression {
         self.expressions.get(id.0).unwrap()
     }
+}
+
+pub(crate) fn raw_statements(input: &str, table: &mut ExprTable) -> Vec<RawStatement> {
+    let mut current = Range::new(0, 0);
+    let iter = std::iter::from_fn(move || {
+        let statement = statement_after(input, &current, table);
+        current = statement.range;
+        match statement {
+            RawStatement { kind: RawStatementKind::EndStatement, .. } => None,
+            s => Some(s),
+        }
+    });
+    Vec::from_iter(iter)
 }
 
 fn expression_after(
@@ -211,6 +224,23 @@ fn expression_after(
     }
 
     left_expr
+}
+
+fn statement_after(input: &str, start: &Range, table: &mut ExprTable) -> RawStatement {
+    let statement = match token_after(input, start) {
+        RawToken { kind: TokenKind::Return, ref range } => return_statement(input, range, table),
+        RawToken { kind: TokenKind::Let, ref range } => let_statement(input, range, table),
+        RawToken { kind: TokenKind::Eof, ref range } => end_statement(input, range, table),
+        _ => expression_statement(input, start, table),
+    };
+
+    match token_after(input, &statement.range) {
+        RawToken { kind: TokenKind::Semicolon, ref range } => RawStatement {
+            range: Range::merge(&statement.range, range),
+            ..statement
+        },
+        _ => statement,
+    }
 }
 
 fn binary_expression(
@@ -453,22 +483,6 @@ fn unary_expression(
     }
 }
 
-fn statement_after(input: &str, start: &Range, table: &mut ExprTable) -> RawStatement {
-    let statement = match token_after(input, start) {
-        RawToken { kind: TokenKind::Return, ref range } => return_statement(input, range, table),
-        RawToken { kind: TokenKind::Let, ref range } => let_statement(input, range, table),
-        _ => expression_statement(input, start, table),
-    };
-
-    match token_after(input, &statement.range) {
-        RawToken { kind: TokenKind::Semicolon, ref range } => RawStatement {
-            range: Range::merge(&statement.range, range),
-            ..statement
-        },
-        _ => statement,
-    }
-}
-
 fn let_statement(input: &str, start: &Range, table: &mut ExprTable) -> RawStatement {
     let ident = {
         let expression = expression_after(input, start, table, Precedence::Lowest);
@@ -507,6 +521,13 @@ fn return_statement(input: &str, start: &Range, table: &mut ExprTable) -> RawSta
     RawStatement {
         range: Range::merge(start, &expression.range),
         kind: RawStatementKind::ReturnStmt { expr: table.add_expression(expression) },
+    }
+}
+
+fn end_statement(input: &str, start: &Range, table: &mut ExprTable) -> RawStatement {
+    RawStatement {
+        range: Range::merge(start, start),
+        kind: RawStatementKind::EndStatement,
     }
 }
 
