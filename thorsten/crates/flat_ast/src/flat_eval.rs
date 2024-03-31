@@ -145,7 +145,7 @@ impl VM<'_> {
 
     fn eval_identifier(&self, range: &Range, env: &mut Env) -> Return {
         let key = &self.input[range.start..range.end];
-        let value = env.get(key).map(|a| a.clone()).unwrap_or(Object::Null);
+        let value = env.get(key).cloned().unwrap_or(Object::Null);
         Return::Value(value)
     }
 
@@ -352,7 +352,7 @@ impl VM<'_> {
         let mut result = Object::Null;
         for id in body {
             let statement = self.table.get_statement(&id);
-            match self.eval_statement(&statement, &mut env) {
+            match self.eval_statement(statement, &mut env) {
                 Return::Value(v) => result = v,
                 Return::Return(r) => return Return::Value(r),
                 e @ Return::Error(_) => return e,
@@ -386,10 +386,7 @@ impl VM<'_> {
                 Object::Text(String::from(val))
             }
 
-            (Object::Map(values), o) => values
-                .get(&o)
-                .map(|o| o.clone())
-                .unwrap_or_else(|| Object::Null),
+            (Object::Map(values), o) => values.get(&o).cloned().unwrap_or(Object::Null),
 
             _ => unreachable!(),
         };

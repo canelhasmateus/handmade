@@ -80,25 +80,25 @@ pub struct RawToken {
 
 #[derive(Eq, PartialEq)]
 enum LiteralKind {
-    LETTER,
-    DIGIT,
-    WHITESPACE,
-    OTHER,
+    Letter,
+    Digit,
+    Whitespace,
+    Other,
 }
 
 fn literal_kind(value: char) -> LiteralKind {
     match value {
-        ' ' | '\t' | '\n' | '\r' => LiteralKind::WHITESPACE,
-        '_' | 'a'..='z' | 'A'..='Z' => LiteralKind::LETTER,
-        '0'..='9' => LiteralKind::DIGIT,
-        _ => LiteralKind::OTHER,
+        ' ' | '\t' | '\n' | '\r' => LiteralKind::Whitespace,
+        '_' | 'a'..='z' | 'A'..='Z' => LiteralKind::Letter,
+        '0'..='9' => LiteralKind::Digit,
+        _ => LiteralKind::Other,
     }
 }
 
 pub fn raw_token_after(input: &str, range: &Range) -> RawToken {
     let start = min(range.end, input.len());
     let rest = &input[start..];
-    let ch = rest.chars().nth(0).unwrap_or('\0');
+    let ch = rest.chars().next().unwrap_or('\0');
 
     let (kind, len) = match ch {
         '\0' => (TokenKind::Eof, 0),
@@ -138,10 +138,8 @@ pub fn raw_token_after(input: &str, range: &Range) -> RawToken {
             let mut last = '"';
             let mut count = 1;
             for x in rest.chars().skip(1) {
-                if last != '\\' {
-                    if x == '"' {
-                        break;
-                    }
+                if x == '"' && last != '\\' {
+                    break;
                 }
                 last = x;
                 count += 1;
@@ -158,10 +156,10 @@ pub fn raw_token_after(input: &str, range: &Range) -> RawToken {
                 .count();
 
             let tkind = match ckind {
-                LiteralKind::DIGIT => TokenKind::Int,
-                LiteralKind::WHITESPACE => TokenKind::Blank,
-                LiteralKind::OTHER => TokenKind::Illegal,
-                LiteralKind::LETTER => match &rest[..size] {
+                LiteralKind::Digit => TokenKind::Int,
+                LiteralKind::Whitespace => TokenKind::Blank,
+                LiteralKind::Other => TokenKind::Illegal,
+                LiteralKind::Letter => match &rest[..size] {
                     "let" => TokenKind::Let,
                     "fn" => TokenKind::Function,
                     "true" => TokenKind::True,

@@ -524,7 +524,7 @@ fn return_statement(input: &str, start: &Range, table: &mut ExprTable) -> RawSta
     }
 }
 
-fn end_statement(input: &str, start: &Range, table: &mut ExprTable) -> RawStatement {
+fn end_statement(_input: &str, start: &Range, _table: &mut ExprTable) -> RawStatement {
     RawStatement {
         range: Range::merge(start, start),
         kind: RawStatementKind::EndStatement,
