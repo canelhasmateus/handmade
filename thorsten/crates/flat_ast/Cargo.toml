@@ -7,11 +7,12 @@ edition = "2021"
 [lib]
 bench = false
 
-[dependencies]
-
 [dev-dependencies]
 criterion = { version = "0.4", features = ["html_reports"] }
 
 [[bench]]
-name = "flat_ast"
+name = "criterion_flat_ast"
 harness = false
+
+[profile.bench]
+debug = true

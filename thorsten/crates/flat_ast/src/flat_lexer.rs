@@ -1,29 +1,5 @@
-use crate::flat_lexer::TokenKind::Eof;
+use crate::{flat_lexer::TokenKind::Eof, flat_range::Range};
 use std::cmp::min;
-use std::ops::Index;
-
-#[derive(Debug, Eq, PartialEq, Default, Copy, Clone)]
-pub struct Range {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl Index<Range> for str {
-    type Output = str;
-
-    fn index(&self, index: Range) -> &Self::Output {
-        &self[index.start..index.end]
-    }
-}
-
-impl Range {
-    pub fn new(start: usize, end: usize) -> Range {
-        Range { start, end }
-    }
-    pub fn merge(start: &Range, end: &Range) -> Range {
-        Range { start: start.start, end: end.end }
-    }
-}
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum TokenKind {
@@ -96,7 +72,7 @@ fn literal_kind(value: char) -> LiteralKind {
 }
 
 pub fn raw_token_after(input: &str, range: &Range) -> RawToken {
-    let start = min(range.end, input.len());
+    let start = min(range.end as usize, input.len());
     let rest = &input[start..];
     let ch = rest.chars().next().unwrap_or('\0');
 
@@ -174,10 +150,7 @@ pub fn raw_token_after(input: &str, range: &Range) -> RawToken {
         }
     };
 
-    RawToken {
-        kind,
-        range: Range { start, end: start + len },
-    }
+    RawToken { kind, range: Range::new(start, start + len) }
 }
 
 pub fn token_after(input: &str, range: &Range) -> RawToken {

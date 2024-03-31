@@ -1,4 +1,7 @@
-use crate::flat_lexer::{token_after, Range, RawToken, TokenKind};
+use crate::{
+    flat_lexer::{token_after, RawToken, TokenKind},
+    flat_range::Range,
+};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Ord, PartialOrd)]
 pub struct StatementId(usize);
@@ -626,10 +629,12 @@ fn expect_token(
 }
 #[cfg(test)]
 mod tests {
-    use crate::flat_lexer::Range;
-    use crate::flat_parser::{
-        statement_after, BinaryOp, ExprTable, ExpressionId, RawExpression, RawExpressionKind,
-        RawStatement, RawStatementKind, StatementId, UnaryOp,
+    use crate::{
+        flat_parser::{
+            statement_after, BinaryOp, ExprTable, ExpressionId, RawExpression, RawExpressionKind,
+            RawStatement, RawStatementKind, StatementId, UnaryOp,
+        },
+        flat_range::Range,
     };
 
     #[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]

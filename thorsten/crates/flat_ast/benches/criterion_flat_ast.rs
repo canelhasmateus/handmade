@@ -2,7 +2,8 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use flat_ast::flat_eval::eval;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("flat_ast", |b| {
+    let mut group = c.benchmark_group("eval");
+    group.bench_function("flat_ast", |b| {
         b.iter(|| {
             let input = r#"
             let fibo = fn(x) {
@@ -15,6 +16,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             black_box(eval(input));
         })
     });
+    group.finish();
 }
 
 criterion_group!(benches, criterion_benchmark);

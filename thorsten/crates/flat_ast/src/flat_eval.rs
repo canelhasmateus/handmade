@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
 use std::iter::zip;
 
-use crate::flat_lexer::Range;
-use crate::flat_parser::UnaryOp::{self, OpNeg, OpNot};
 use crate::flat_parser::{
     BinaryOp, ExpressionId, RawExpression, RawExpressionKind, RawStatement, RawStatementKind,
-    StatementId,
+    StatementId, UnaryOp,
 };
+use crate::flat_range::Range;
 
 use crate::flat_parser::{raw_statements, ExprTable};
 type Env = BTreeMap<String, Object>;
@@ -72,7 +71,7 @@ impl VM<'_> {
             },
             RawStatementKind::LetStmt { ref name, ref expr } => {
                 let RawExpression { ref range, .. } = self.table.get_expression(name);
-                let name = &self.input[range.start..range.end];
+                let name = &self.input[range];
                 match self.eval_expr(expr, env) {
                     Return::Return(_) => unreachable!("Return in let statement position"),
                     e @ Return::Error(_) => e,
@@ -122,7 +121,7 @@ impl VM<'_> {
     }
 
     fn eval_integer(&self, range: &Range) -> Return {
-        let content = &self.input[range.start..range.end];
+        let content = &self.input[range];
         content
             .parse::<i64>()
             .map(|i| Return::Value(Object::Integer(i)))
@@ -130,13 +129,13 @@ impl VM<'_> {
     }
 
     fn eval_text(&self, range: &Range) -> Return {
-        let unquoted = (range.start + 1)..(range.end - 1);
+        let unquoted = range.slice(1, 1);
         let content = self.input[unquoted].to_string();
         Return::Value(Object::Text(content))
     }
 
     fn eval_bool(&self, range: &Range) -> Return {
-        let content = &self.input[range.start..range.end];
+        let content = &self.input[range];
         content
             .parse::<bool>()
             .map(|b| Return::Value(Object::Boolean(b)))
@@ -144,13 +143,13 @@ impl VM<'_> {
     }
 
     fn eval_identifier(&self, range: &Range, env: &mut Env) -> Return {
-        let key = &self.input[range.start..range.end];
+        let key = &self.input[range];
         let value = env.get(key).cloned().unwrap_or(Object::Null);
         Return::Value(value)
     }
 
     fn eval_list(&self, values: &[ExpressionId], env: &mut Env) -> Return {
-        let mut result = vec![];
+        let mut result = Vec::with_capacity(values.len());
         for expr in values {
             match self.eval_expr(expr, env) {
                 Return::Value(b) => result.push(b),
@@ -190,11 +189,11 @@ impl VM<'_> {
         };
 
         let result = match op {
-            OpNot => match value {
+            UnaryOp::OpNot => match value {
                 Object::Boolean(b) => Object::Boolean(!b),
                 _ => unreachable!("Can't not non-boolean"),
             },
-            OpNeg => match value {
+            UnaryOp::OpNeg => match value {
                 Object::Integer(i) => Object::Integer(-i),
                 _ => unreachable!("Can't negate non-integer"),
             },
@@ -296,14 +295,14 @@ impl VM<'_> {
         body: &[StatementId],
         env: &mut Env,
     ) -> Return {
-        let name = &self.input[range.start..range.end];
+        let name = &self.input[range];
         let func = Function {
             body: body.to_vec(),
             env: env.clone(),
             parameters: parameters
                 .iter()
                 .map(|id| self.table.get_expression(id).range)
-                .map(|range| self.input[range.start..range.end].to_string())
+                .map(|range| self.input[range].to_string())
                 .collect(),
         };
 
@@ -318,7 +317,7 @@ impl VM<'_> {
         arguments: &[ExpressionId],
         outer_env: &mut Env,
     ) -> Return {
-        let mut bindings = vec![];
+        let mut bindings = Vec::with_capacity(arguments.len());
         for arg in arguments {
             match self.eval_expr(arg, outer_env) {
                 Return::Value(v) => bindings.push(v),
@@ -329,7 +328,7 @@ impl VM<'_> {
 
         let Function { parameters, body, env } = {
             let RawExpression { ref range, .. } = self.table.get_expression(function);
-            let name = &self.input[range.start..range.end];
+            let name = &self.input[range];
             let value = outer_env.get(name);
             match value {
                 None => return Return::Error(format!("Function not found: {}", name)),
