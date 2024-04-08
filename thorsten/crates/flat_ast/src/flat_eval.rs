@@ -1,16 +1,97 @@
-use std::collections::BTreeMap;
-use std::iter::zip;
+use std::collections::{BTreeMap, HashMap};
 
+use crate::flat_parser::{raw_statements, ExprTable};
 use crate::flat_parser::{
     BinaryOp, ExpressionId, RawExpression, RawExpressionKind, RawStatement, RawStatementKind,
     StatementId, UnaryOp,
 };
 use crate::flat_range::Range;
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct EnvId(usize);
 
-use crate::flat_parser::{raw_statements, ExprTable};
-type Env = BTreeMap<String, Object>;
+#[derive(Debug)]
+struct LocalEnv {
+    map: HashMap<String, Object>,
+    parent: Option<EnvId>,
+}
 
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
+impl LocalEnv {
+    fn new() -> LocalEnv {
+        LocalEnv { map: HashMap::new(), parent: None }
+    }
+
+    fn from(len: usize, env: EnvId) -> LocalEnv {
+        LocalEnv {
+            map: HashMap::with_capacity(len),
+            parent: Some(env),
+        }
+    }
+
+    fn insert(&mut self, key: &str, value: Object) {
+        self.map.insert(key.to_owned(), value);
+    }
+
+    fn get(&self, key: &str) -> Option<&Object> {
+        self.map.get(key)
+    }
+}
+
+#[derive(Debug)]
+struct Env {
+    envs: Vec<LocalEnv>,
+    stack: Vec<EnvId>,
+}
+
+impl Env {
+    fn new() -> Env {
+        let mut env = Env { envs: Vec::new(), stack: Vec::new() };
+        let id = env.capture(LocalEnv::new());
+        env.push(id);
+        env
+    }
+
+    fn insert(&mut self, key: &str, value: Object) {
+        let current_id = self.peek();
+        let current = self.envs.get_mut(current_id.0);
+        match current {
+            Some(env) => env.insert(key, value),
+            None => unreachable!(),
+        }
+    }
+
+    fn get(&self, key: &str) -> Option<&Object> {
+        let current_id = self.peek().0;
+        let mut current = self.envs.get(current_id).unwrap();
+        let mut result = current.get(key);
+        while result.is_none() && current.parent.is_some() {
+            let parent = current.parent.unwrap().0;
+            current = self.envs.get(parent).unwrap();
+            result = current.get(key);
+        }
+        result
+    }
+
+    fn capture(&mut self, env: LocalEnv) -> EnvId {
+        let id = EnvId(self.envs.len());
+        self.envs.push(env);
+        id
+    }
+
+    fn push(&mut self, id: EnvId) {
+        self.stack.push(id);
+    }
+
+    fn pop(&mut self) -> Option<EnvId> {
+        self.stack.pop()
+    }
+
+    fn peek(&self) -> EnvId {
+        let id = *self.stack.last().unwrap();
+        id
+    }
+}
+
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone)]
 pub enum Object {
     Null,
     Integer(i64),
@@ -21,20 +102,19 @@ pub enum Object {
     Function(Function),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone)]
 pub enum Return {
     Value(Object),
     Return(Object),
     Error(String),
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
+#[derive(Debug, PartialOrd, Ord, PartialEq, Eq, Clone)]
 pub struct Function {
-    parameters: Vec<String>,
+    parameters: Vec<Range>,
     body: Vec<StatementId>,
-    env: Env,
+    env: EnvId,
 }
-
 struct VM<'a> {
     table: ExprTable,
     input: &'a str,
@@ -48,7 +128,7 @@ pub fn eval(input: &str) -> Object {
     let statements = raw_statements(input, &mut table);
 
     let vm = VM { table, input };
-    let mut env = BTreeMap::new();
+    let mut env = Env::new();
     let mut result = Return::Value(Object::Null);
     for statement in statements {
         result = vm.eval_statement(&statement, &mut env);
@@ -69,18 +149,18 @@ impl VM<'_> {
                 Return::Return(_) => unreachable!("return in return position"),
                 e @ Return::Error(_) => e,
             },
-            RawStatementKind::LetStmt { ref name, ref expr } => {
-                let RawExpression { ref range, .. } = self.table.get_expression(name);
-                let name = &self.input[range];
-                match self.eval_expr(expr, env) {
-                    Return::Return(_) => unreachable!("Return in let statement position"),
-                    e @ Return::Error(_) => e,
-                    Return::Value(v) => {
-                        env.insert(name.to_string(), v);
-                        Return::Value(Object::Null)
-                    }
+            RawStatementKind::LetStmt { ref expr, ref name } => match self.eval_expr(expr, env) {
+                Return::Return(_) => unreachable!("Return in let statement position"),
+                e @ Return::Error(_) => e,
+                Return::Value(v) => {
+                    let name = {
+                        let name = self.table.get_expression(name);
+                        &self.input[name.range]
+                    };
+                    env.insert(name, v);
+                    Return::Value(Object::Null)
                 }
-            }
+            },
 
             RawStatementKind::EndStatement => todo!(),
             RawStatementKind::IllegalStatement => todo!(),
@@ -88,36 +168,38 @@ impl VM<'_> {
     }
 
     fn eval_expr(&self, expr: &ExpressionId, env: &mut Env) -> Return {
-        let RawExpression { ref range, kind } = self.table.get_expression(expr);
+        let RawExpression { range, kind } = self.table.get_expression(expr);
 
         match kind {
             RawExpressionKind::LiteralString => self.eval_text(range),
             RawExpressionKind::LiteralInteger => self.eval_integer(range),
             RawExpressionKind::LiteralBoolean => self.eval_bool(range),
-            RawExpressionKind::LiteralArray { ref values } => self.eval_list(values, env),
-            RawExpressionKind::LiteralHash { ref values } => self.eval_map(values, env),
             RawExpressionKind::Identifier => self.eval_identifier(range, env),
+            RawExpressionKind::LiteralArray { values } => self.eval_list(values, env),
+            RawExpressionKind::LiteralHash { values } => self.eval_map(values, env),
             RawExpressionKind::LiteralFunction { parameters, body } => {
-                self.eval_function(range, parameters, body, env)
+                self.eval_function(parameters, body, env)
             }
 
-            RawExpressionKind::Parenthesized { ref expr } => self.eval_expr(expr, env),
-            RawExpressionKind::Unary { op, ref expr } => self.eval_unary(*op, expr, env),
-            RawExpressionKind::Binary { op, ref left, ref right } => {
-                self.eval_binary(*op, left, right, env)
-            }
+            RawExpressionKind::Parenthesized { expr } => self.eval_expr(expr, env),
+            RawExpressionKind::Unary { op, expr } => self.eval_unary(op, expr, env),
+            RawExpressionKind::Binary { op, left, right } => self.eval_binary(op, left, right, env),
 
-            RawExpressionKind::Conditional { ref condition, positive, negative } => {
+            RawExpressionKind::Conditional { condition, positive, negative } => {
                 self.eval_conditional(condition, positive, negative, env)
             }
-            RawExpressionKind::Call { ref function, arguments } => {
+            RawExpressionKind::Call { function, arguments } => {
                 self.eval_call(function, arguments, env)
             }
-            RawExpressionKind::IndexExpression { ref left, ref idx } => {
-                self.eval_index(left, idx, env)
-            }
+            RawExpressionKind::IndexExpression { left, idx } => self.eval_index(left, idx, env),
             RawExpressionKind::IllegalExpression => todo!(),
         }
+    }
+
+    fn eval_text(&self, range: &Range) -> Return {
+        let unquoted = range.slice(1, 1);
+        let content = self.input[unquoted].to_string();
+        Return::Value(Object::Text(content))
     }
 
     fn eval_integer(&self, range: &Range) -> Return {
@@ -128,24 +210,12 @@ impl VM<'_> {
             .unwrap_or_else(|_| Return::Error(format!("Cannot parse {} as integer", content)))
     }
 
-    fn eval_text(&self, range: &Range) -> Return {
-        let unquoted = range.slice(1, 1);
-        let content = self.input[unquoted].to_string();
-        Return::Value(Object::Text(content))
-    }
-
     fn eval_bool(&self, range: &Range) -> Return {
         let content = &self.input[range];
         content
             .parse::<bool>()
             .map(|b| Return::Value(Object::Boolean(b)))
             .unwrap_or_else(|_| Return::Error(format!("Cannot parse {} as boolean", content)))
-    }
-
-    fn eval_identifier(&self, range: &Range, env: &mut Env) -> Return {
-        let key = &self.input[range];
-        let value = env.get(key).cloned().unwrap_or(Object::Null);
-        Return::Value(value)
     }
 
     fn eval_list(&self, values: &[ExpressionId], env: &mut Env) -> Return {
@@ -158,6 +228,12 @@ impl VM<'_> {
             }
         }
         Return::Value(Object::List(result))
+    }
+
+    fn eval_identifier(&self, range: &Range, env: &mut Env) -> Return {
+        let key = &self.input[range];
+        let value = env.get(key).cloned().unwrap_or(Object::Null);
+        Return::Value(value)
     }
 
     fn eval_map(&self, values: &[(ExpressionId, ExpressionId)], env: &mut Env) -> Return {
@@ -181,7 +257,7 @@ impl VM<'_> {
         Return::Value(Object::Map(map))
     }
 
-    fn eval_unary(&self, op: UnaryOp, expr: &ExpressionId, env: &mut Env) -> Return {
+    fn eval_unary(&self, op: &UnaryOp, expr: &ExpressionId, env: &mut Env) -> Return {
         let value = match self.eval_expr(expr, env) {
             Return::Value(v) => v,
             e @ Return::Error(_) => return e,
@@ -204,7 +280,7 @@ impl VM<'_> {
 
     fn eval_binary(
         &self,
-        op: BinaryOp,
+        op: &BinaryOp,
         left: &ExpressionId,
         right: &ExpressionId,
         env: &mut Env,
@@ -247,12 +323,12 @@ impl VM<'_> {
             (l, r) => match op {
                 BinaryOp::Equals => Object::Boolean(l == r),
                 BinaryOp::Differs => Object::Boolean(l != r),
-                BinaryOp::Plus => return Return::Error("Cant add these things".to_owned()),
-                BinaryOp::Minus => return Return::Error("Cant subtract these things".to_owned()),
-                BinaryOp::Times => return Return::Error("Cant multiply these things".to_owned()),
-                BinaryOp::Div => return Return::Error("Cant divide these things".to_owned()),
-                BinaryOp::Greater => return Return::Error("Cant compare these things".to_owned()),
-                BinaryOp::Lesser => return Return::Error("Cant compare these things".to_owned()),
+                BinaryOp::Plus => return Return::Error(format!("Cant add {:?} {:?}", l, r)),
+                BinaryOp::Minus => return Return::Error(format!("Cant subtract {:?} {:?}", l, r)),
+                BinaryOp::Times => return Return::Error(format!("Cant multiply {:?} {:?}", l, r)),
+                BinaryOp::Div => return Return::Error(format!("Cant divide {:?} {:?}", l, r)),
+                BinaryOp::Greater => return Return::Error(format!("Cant compare {:?} {:?}", l, r)),
+                BinaryOp::Lesser => return Return::Error(format!("Cant compare {:?} {:?}", l, r)),
             },
         };
 
@@ -290,47 +366,32 @@ impl VM<'_> {
 
     fn eval_function(
         &self,
-        range: &Range,
         parameters: &[ExpressionId],
         body: &[StatementId],
         env: &mut Env,
     ) -> Return {
-        let name = &self.input[range];
         let func = Function {
+            env: env.peek(),
             body: body.to_vec(),
-            env: env.clone(),
             parameters: parameters
                 .iter()
-                .map(|id| self.table.get_expression(id).range)
-                .map(|range| self.input[range].to_string())
+                .map(|expr| self.table.get_expression(expr).range)
                 .collect(),
         };
 
-        let result = Object::Function(func);
-        env.insert(name.to_string(), result.clone());
-        Return::Value(result)
+        Return::Value(Object::Function(func))
     }
 
     fn eval_call(
         &self,
         function: &ExpressionId,
         arguments: &[ExpressionId],
-        outer_env: &mut Env,
+        env: &mut Env,
     ) -> Return {
-        let mut bindings = Vec::with_capacity(arguments.len());
-        for arg in arguments {
-            match self.eval_expr(arg, outer_env) {
-                Return::Value(v) => bindings.push(v),
-                Return::Return(_) => unreachable!("Return in call position"),
-                e @ Return::Error(_) => return e,
-            }
-        }
-
-        let Function { parameters, body, env } = {
-            let RawExpression { ref range, .. } = self.table.get_expression(function);
+        let function = {
+            let RawExpression { range, .. } = self.table.get_expression(function);
             let name = &self.input[range];
-            let value = outer_env.get(name);
-            match value {
+            match env.get(name) {
                 None => return Return::Error(format!("Function not found: {}", name)),
                 Some(o) => match o {
                     Object::Function(f) => f.clone(),
@@ -339,25 +400,42 @@ impl VM<'_> {
             }
         };
 
-        let mut env = {
-            let mut e = outer_env.clone();
-            e.extend(env);
-            for (arg, param) in zip(parameters, bindings) {
-                e.insert(arg, param);
+        let local = {
+            let len = function.parameters.len();
+            let mut local = LocalEnv::from(len, function.env);
+            for i in 0..len {
+                match self.eval_expr(&arguments[i], env) {
+                    Return::Return(_) => unreachable!("Return in call position"),
+                    e @ Return::Error(_) => return e,
+                    Return::Value(v) => {
+                        let key = &self.input[function.parameters[i]];
+                        local.insert(key, v);
+                    }
+                };
             }
-            e
+
+            env.capture(local)
         };
 
+        env.push(local);
         let mut result = Object::Null;
-        for id in body {
+        for id in function.body {
             let statement = self.table.get_statement(&id);
-            match self.eval_statement(statement, &mut env) {
-                Return::Value(v) => result = v,
-                Return::Return(r) => return Return::Value(r),
-                e @ Return::Error(_) => return e,
-            }
+            result = match self.eval_statement(statement, env) {
+                Return::Value(v) => v,
+                Return::Return(r) => {
+                    env.pop();
+                    return Return::Value(r);
+                }
+
+                e @ Return::Error(_) => {
+                    env.pop();
+                    return e;
+                }
+            };
         }
 
+        env.pop();
         Return::Value(result)
     }
 
@@ -549,5 +627,22 @@ mod tests {
         fibonacci(10)
         "#;
         assert_eq!(eval(input), Object::Integer(55));
+    }
+
+    #[test]
+    fn closures() {
+        let input = r#"
+        let makeClosure = fn(multiplier) {
+          let closure =  fn(amount) { return multiplier * amount; };
+          return closure;
+        }
+
+        let double = makeClosure(2);
+        let triple = makeClosure(3);
+        
+        double(4) + triple(5)
+        "#;
+
+        assert_eq!(eval(input), Object::Integer(23));
     }
 }

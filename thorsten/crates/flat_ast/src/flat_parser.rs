@@ -19,6 +19,7 @@ pub struct RawExpression {
     pub kind: RawExpressionKind,
 }
 
+#[derive(Debug)]
 pub enum RawStatementKind {
     LetStmt { name: ExpressionId, expr: ExpressionId },
     ReturnStmt { expr: ExpressionId },
@@ -27,6 +28,7 @@ pub enum RawStatementKind {
     EndStatement,
 }
 
+#[derive(Debug)]
 pub enum RawExpressionKind {
     LiteralInteger,
     LiteralString,
@@ -716,21 +718,21 @@ mod tests {
                 RawStatementKind::EndStatement => StatementKind::EndStatement {},
                 RawStatementKind::IllegalStatement => StatementKind::IllegalStatement {},
                 RawStatementKind::LetStmt { name, expr } => StatementKind::LetStmt {
-                    name: lookup_expression(input, &name, &table),
-                    expr: lookup_expression(input, &expr, &table),
+                    name: lookup_expression(input, name, &table),
+                    expr: lookup_expression(input, expr, &table),
                 },
                 RawStatementKind::ReturnStmt { expr } => {
-                    StatementKind::ReturnStmt { expr: lookup_expression(input, &expr, &table) }
+                    StatementKind::ReturnStmt { expr: lookup_expression(input, expr, &table) }
                 }
                 RawStatementKind::ExprStmt { expr } => {
-                    StatementKind::ExprStmt { expr: lookup_expression(input, &expr, &table) }
+                    StatementKind::ExprStmt { expr: lookup_expression(input, expr, &table) }
                 }
             },
         }
     }
 
-    fn lookup_expression(input: &str, id: &ExpressionId, table: &ExprTable) -> Expression {
-        let RawExpression { range, kind } = table.get_expression(id);
+    fn lookup_expression(input: &str, id: ExpressionId, table: &ExprTable) -> Expression {
+        let RawExpression { range, kind } = table.get_expression(&id);
         Expression {
             content: input[range.start..range.end].into(),
             kind: match kind {
@@ -743,19 +745,19 @@ mod tests {
                     ExpressionKind::LiteralFunction {
                         parameters: parameters
                             .iter()
-                            .map(|p| lookup_expression(input, p, table))
+                            .map(|p| lookup_expression(input, *p, table))
                             .map(|e| e.content)
                             .collect(),
                         body: body
                             .iter()
-                            .map(|p| lookup_statement(input, p, table))
+                            .map(|p| lookup_statement(input, *p, table))
                             .collect(),
                     }
                 }
                 RawExpressionKind::LiteralArray { values } => ExpressionKind::LiteralArray {
                     values: values
                         .iter()
-                        .map(|p| lookup_expression(input, p, table))
+                        .map(|p| lookup_expression(input, *p, table))
                         .collect(),
                 },
                 RawExpressionKind::LiteralHash { values } => ExpressionKind::LiteralHash {
@@ -763,68 +765,68 @@ mod tests {
                         .iter()
                         .map(|(k, v)| {
                             (
-                                lookup_expression(input, k, table),
-                                lookup_expression(input, v, table),
+                                lookup_expression(input, *k, table),
+                                lookup_expression(input, *v, table),
                             )
                         })
                         .collect(),
                 },
                 RawExpressionKind::Unary { op, expr } => ExpressionKind::Unary {
                     op: *op,
-                    expr: lookup_expression(input, expr, table).into(),
+                    expr: lookup_expression(input, *expr, table).into(),
                 },
                 RawExpressionKind::Binary { op, left, right } => ExpressionKind::Binary {
                     op: *op,
-                    left: lookup_expression(input, left, table).into(),
-                    right: lookup_expression(input, right, table).into(),
+                    left: lookup_expression(input, *left, table).into(),
+                    right: lookup_expression(input, *right, table).into(),
                 },
                 RawExpressionKind::Conditional { condition, positive, negative } => {
                     ExpressionKind::Conditional {
-                        condition: lookup_expression(input, condition, table).into(),
+                        condition: lookup_expression(input, *condition, table).into(),
                         positive: positive
                             .iter()
-                            .map(|p| lookup_statement(input, p, table))
+                            .map(|p| lookup_statement(input, *p, table))
                             .collect(),
                         negative: negative
                             .iter()
-                            .map(|p| lookup_statement(input, p, table))
+                            .map(|p| lookup_statement(input, *p, table))
                             .collect(),
                     }
                 }
                 RawExpressionKind::Call { function, arguments } => ExpressionKind::Call {
-                    function: lookup_expression(input, function, table).into(),
+                    function: lookup_expression(input, *function, table).into(),
                     arguments: arguments
                         .iter()
-                        .map(|a| lookup_expression(input, a, table))
+                        .map(|a| lookup_expression(input, *a, table))
                         .collect(),
                 },
                 RawExpressionKind::IndexExpression { left, idx } => {
                     ExpressionKind::IndexExpression {
-                        left: lookup_expression(input, left, table).into(),
-                        idx: lookup_expression(input, idx, table).into(),
+                        left: lookup_expression(input, *left, table).into(),
+                        idx: lookup_expression(input, *idx, table).into(),
                     }
                 }
                 RawExpressionKind::Parenthesized { expr } => ExpressionKind::Parenthesized {
-                    expression: lookup_expression(input, expr, table).into(),
+                    expression: lookup_expression(input, *expr, table).into(),
                 },
             },
         }
     }
 
-    fn lookup_statement(input: &str, id: &StatementId, table: &ExprTable) -> Statement {
-        let RawStatement { range, kind } = table.get_statement(id);
+    fn lookup_statement(input: &str, id: StatementId, table: &ExprTable) -> Statement {
+        let RawStatement { range, kind } = table.get_statement(&id);
         Statement {
             content: input[range.start..range.end].into(),
             kind: match kind {
                 RawStatementKind::LetStmt { name, expr } => StatementKind::LetStmt {
-                    name: lookup_expression(input, name, table),
-                    expr: lookup_expression(input, expr, table),
+                    name: lookup_expression(input, *name, table),
+                    expr: lookup_expression(input, *expr, table),
                 },
                 RawStatementKind::ReturnStmt { expr } => {
-                    StatementKind::ReturnStmt { expr: lookup_expression(input, expr, table) }
+                    StatementKind::ReturnStmt { expr: lookup_expression(input, *expr, table) }
                 }
                 RawStatementKind::ExprStmt { expr } => {
-                    StatementKind::ExprStmt { expr: lookup_expression(input, expr, table) }
+                    StatementKind::ExprStmt { expr: lookup_expression(input, *expr, table) }
                 }
                 RawStatementKind::IllegalStatement => StatementKind::IllegalStatement,
                 RawStatementKind::EndStatement => StatementKind::EndStatement,

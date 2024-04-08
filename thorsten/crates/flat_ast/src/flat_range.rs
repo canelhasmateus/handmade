@@ -1,6 +1,6 @@
 use std::ops::Index;
 
-#[derive(Debug, Eq, PartialEq, Default, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, PartialOrd, Ord, Copy, Clone)]
 pub struct Range {
     pub start: usize,
     pub end: usize,
