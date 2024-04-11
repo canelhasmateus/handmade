@@ -1,4 +1,4 @@
-pub mod flat_eval;
-pub mod flat_lexer;
-pub mod flat_parser;
-pub mod flat_range;
+pub mod interpreter;
+pub mod lexer;
+pub mod parser;
+pub mod range;

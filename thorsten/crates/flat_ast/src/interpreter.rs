@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::flat_parser::{raw_statements, ExprTable};
-use crate::flat_parser::{
+use crate::parser::{raw_statements, ExprTable};
+use crate::parser::{
     BinaryOp, ExpressionId, RawExpression, RawExpressionKind, RawStatement, RawStatementKind,
     StatementId, UnaryOp,
 };
-use crate::flat_range::Range;
+use crate::range::Range;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct EnvId(usize);
 
@@ -115,7 +115,7 @@ pub struct Function {
     body: Vec<StatementId>,
     env: EnvId,
 }
-struct VM<'a> {
+struct Interpreter<'a> {
     table: ExprTable,
     input: &'a str,
 }
@@ -127,7 +127,7 @@ pub fn eval(input: &str) -> Object {
     };
     let statements = raw_statements(input, &mut table);
 
-    let vm = VM { table, input };
+    let vm = Interpreter { table, input };
     let mut env = Env::new();
     let mut result = Return::Value(Object::Null);
     for statement in statements {
@@ -140,7 +140,7 @@ pub fn eval(input: &str) -> Object {
     }
 }
 
-impl VM<'_> {
+impl Interpreter<'_> {
     fn eval_statement(&self, statement: &RawStatement, env: &mut Env) -> Return {
         match statement.kind {
             RawStatementKind::ExprStmt { ref expr } => self.eval_expr(expr, env),
@@ -476,7 +476,7 @@ impl VM<'_> {
 mod tests {
     use std::collections::BTreeMap;
 
-    use crate::flat_eval::{eval, Object};
+    use crate::interpreter::{eval, Object};
 
     #[test]
     fn integers() {

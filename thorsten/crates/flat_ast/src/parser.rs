@@ -1,6 +1,6 @@
 use crate::{
-    flat_lexer::{token_after, RawToken, TokenKind},
-    flat_range::Range,
+    lexer::{token_after, RawToken, TokenKind},
+    range::Range,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Ord, PartialOrd)]
@@ -632,11 +632,11 @@ fn expect_token(
 #[cfg(test)]
 mod tests {
     use crate::{
-        flat_parser::{
+        parser::{
             statement_after, BinaryOp, ExprTable, ExpressionId, RawExpression, RawExpressionKind,
             RawStatement, RawStatementKind, StatementId, UnaryOp,
         },
-        flat_range::Range,
+        range::Range,
     };
 
     #[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]

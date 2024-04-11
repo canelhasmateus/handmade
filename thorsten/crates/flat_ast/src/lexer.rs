@@ -1,4 +1,4 @@
-use crate::{flat_lexer::TokenKind::Eof, flat_range::Range};
+use crate::{lexer::TokenKind::Eof, range::Range};
 use std::cmp::min;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
