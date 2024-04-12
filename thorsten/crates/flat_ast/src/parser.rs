@@ -122,6 +122,12 @@ pub(crate) struct ExprTable {
 }
 
 impl ExprTable {
+    pub(crate) fn new() -> ExprTable {
+        ExprTable {
+            statements: Vec::new(),
+            expressions: Vec::new(),
+        }
+    }
     fn add_statement(&mut self, statement: RawStatement) -> StatementId {
         let id = self.statements.len();
         self.statements.push(statement);
