@@ -1,5 +1,8 @@
 use crate::{
-    bytecode::{self, bint, cte, ByteObj, Bytecode, ConstantId, Operation},
+    bytecode::{
+        self, add, bbool, bint, cte, div, eq, gt, lt, mul, neq, sub, ByteObj, Bytecode, ConstantId,
+        Operation,
+    },
     parser::{
         ExprTable, ExpressionId, RawExpression, RawExpressionKind, RawStatement, RawStatementKind,
     },
@@ -52,18 +55,22 @@ impl Compiler {
                 self.compile_expr(unit, left, res);
                 self.compile_expr(unit, right, res);
                 match op {
-                    crate::parser::BinaryOp::Plus => res.emit(Operation::Add()),
-                    crate::parser::BinaryOp::Minus => todo!(),
-                    crate::parser::BinaryOp::Times => todo!(),
-                    crate::parser::BinaryOp::Div => todo!(),
-                    crate::parser::BinaryOp::Greater => todo!(),
-                    crate::parser::BinaryOp::Lesser => todo!(),
-                    crate::parser::BinaryOp::Equals => todo!(),
-                    crate::parser::BinaryOp::Differs => todo!(),
+                    crate::parser::BinaryOp::Plus => res.emit(add()),
+                    crate::parser::BinaryOp::Minus => res.emit(sub()),
+                    crate::parser::BinaryOp::Times => res.emit(mul()),
+                    crate::parser::BinaryOp::Div => res.emit(div()),
+                    crate::parser::BinaryOp::Greater => res.emit(gt()),
+                    crate::parser::BinaryOp::Lesser => res.emit(lt()),
+                    crate::parser::BinaryOp::Equals => res.emit(eq()),
+                    crate::parser::BinaryOp::Differs => res.emit(neq()),
                 }
             }
             RawExpressionKind::LiteralString => todo!(),
-            RawExpressionKind::LiteralBoolean => todo!(),
+            RawExpressionKind::LiteralBoolean => {
+                let value = (&unit.source[range]).parse::<bool>().unwrap();
+                let id = res.add(bbool(value));
+                res.emit(Operation::Cte(id));
+            }
             RawExpressionKind::Parenthesized { expr } => todo!(),
             RawExpressionKind::LiteralFunction { parameters, body } => todo!(),
             RawExpressionKind::LiteralArray { values } => todo!(),
@@ -135,6 +142,65 @@ impl Vm {
                     let left = state.pop();
                     match (left, right) {
                         (ByteObj::Int(l), ByteObj::Int(r)) => state.push(bint(l + r)),
+                        _ => todo!(),
+                    }
+                }
+                Operation::Sub() => {
+                    let right = state.pop();
+                    let left = state.pop();
+                    match (left, right) {
+                        (ByteObj::Int(l), ByteObj::Int(r)) => state.push(bint(l - r)),
+                        _ => todo!(),
+                    }
+                }
+                Operation::Mul() => {
+                    let right = state.pop();
+                    let left = state.pop();
+                    match (left, right) {
+                        (ByteObj::Int(l), ByteObj::Int(r)) => state.push(bint(l * r)),
+                        _ => todo!(),
+                    }
+                }
+                Operation::Div() => {
+                    let right = state.pop();
+                    let left = state.pop();
+                    match (left, right) {
+                        (ByteObj::Int(l), ByteObj::Int(r)) => state.push(bint(l / r)),
+                        _ => todo!(),
+                    }
+                }
+                Operation::Gt() => {
+                    let right = state.pop();
+                    let left = state.pop();
+                    match (left, right) {
+                        (ByteObj::Int(l), ByteObj::Int(r)) => state.push(bbool(l > r)),
+                        _ => todo!(),
+                    }
+                }
+                Operation::Lt() => {
+                    let right = state.pop();
+                    let left = state.pop();
+                    match (left, right) {
+                        (ByteObj::Int(l), ByteObj::Int(r)) => state.push(bbool(l < r)),
+                        _ => todo!(),
+                    }
+                }
+                Operation::Eq() => {
+                    let right = state.pop();
+                    let left = state.pop();
+                    match (left, right) {
+                        (ByteObj::Int(l), ByteObj::Int(r)) => state.push(bbool(l == r)),
+                        (ByteObj::Bool(l), ByteObj::Bool(r)) => state.push(bbool(l == r)),
+                        _ => todo!(),
+                    }
+                }
+                Operation::Neq() => {
+                    let right = state.pop();
+                    let left = state.pop();
+                    match (left, right) {
+                        (ByteObj::Int(l), ByteObj::Int(r)) => state.push(bbool(l != r)),
+                        (ByteObj::Bool(l), ByteObj::Bool(r)) => state.push(bbool(l != r)),
+                        _ => todo!(),
                     }
                 }
             }
@@ -146,7 +212,7 @@ impl Vm {
 #[cfg(test)]
 mod tests {
     use crate::{
-        bytecode::{add, bint, cte, ByteObj, Bytecode, Operation},
+        bytecode::{add, bbool, bint, cte, ByteObj, Bytecode, Operation},
         parser::{raw_statements, ExprTable},
     };
 
@@ -179,6 +245,15 @@ mod tests {
 
     #[test]
     fn runs_integer_arithmetic() {
-        assert_eq!(run("1 + 2"), bint(3))
+        assert_eq!(run("1 + 2"), bint(3));
+        assert_eq!(run("2 - 1"), bint(1));
+        assert_eq!(run("2 * 2"), bint(4));
+        assert_eq!(run("4 / 2"), bint(2));
+        assert_eq!(run("4 > 2"), bbool(true));
+        assert_eq!(run("4 < 2"), bbool(false));
+        assert_eq!(run("4 == 2"), bbool(false));
+        assert_eq!(run("4 != 2"), bbool(true));
+        assert_eq!(run("true == true"), bbool(true));
+        assert_eq!(run("false != true"), bbool(true));
     }
 }
