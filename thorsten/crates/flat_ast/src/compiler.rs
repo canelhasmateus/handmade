@@ -2,8 +2,8 @@ use core::fmt;
 
 use crate::{
     bytecode::{
-        self, add, bbool, bint, cte, div, eq, gt, lt, mul, neg, neq, not, pop, sub, ByteObj,
-        Bytecode, ConstantId, Operation,
+        self, add, bbool, bint, cte, div, eq, gt, mul, neg, neq, not, pop, sub, ByteObj, Bytecode,
+        ConstantId, Operation,
     },
     parser::{
         ExprTable, ExpressionId, RawExpression, RawExpressionKind, RawStatement, RawStatementKind,
@@ -65,7 +65,10 @@ impl Compiler {
                     crate::parser::BinaryOp::Times => res.emit(mul()),
                     crate::parser::BinaryOp::Div => res.emit(div()),
                     crate::parser::BinaryOp::Greater => res.emit(gt()),
-                    crate::parser::BinaryOp::Lesser => res.emit(lt()),
+                    crate::parser::BinaryOp::Lesser => {
+                        res.swap();
+                        res.emit(gt())
+                    }
                     crate::parser::BinaryOp::Equals => res.emit(eq()),
                     crate::parser::BinaryOp::Differs => res.emit(neq()),
                 }
@@ -159,7 +162,6 @@ impl Vm {
                 | Operation::Mul()
                 | Operation::Div()
                 | Operation::Gt()
-                | Operation::Lt()
                 | Operation::Eq()
                 | Operation::Neq() => run_binary(instructions, state),
 
@@ -196,7 +198,6 @@ fn run_binary(op: &Operation, state: &mut VmState) {
             Operation::Mul() => ByteObj::Int(l * r),
             Operation::Div() => ByteObj::Int(l / r),
             Operation::Gt() => ByteObj::Bool(l > r),
-            Operation::Lt() => ByteObj::Bool(l < r),
             Operation::Eq() => ByteObj::Bool(l == r),
             Operation::Neq() => ByteObj::Bool(l != r),
             _ => unreachable!(),
@@ -216,7 +217,7 @@ fn run_binary(op: &Operation, state: &mut VmState) {
 #[cfg(test)]
 mod tests {
     use crate::{
-        bytecode::{add, bbool, bint, cte, ByteObj, Bytecode, Operation},
+        bytecode::{add, bbool, bint, cte, gt, pop, ByteObj, Bytecode, Operation},
         parser::{raw_statements, ExprTable},
     };
 
@@ -255,9 +256,24 @@ mod tests {
             run("1 + 2"),
             Bytecode {
                 constants: vec![bint(1), bint(2)],
-                instructions: vec![cte(0), cte(1), add()],
+                instructions: vec![cte(0), cte(1), add(), pop()],
             },
-        )
+        );
+
+        assert_code(
+            run("1 > 2"),
+            Bytecode {
+                constants: vec![bint(1), bint(2)],
+                instructions: vec![cte(0), cte(1), gt(), pop()],
+            },
+        );
+        assert_code(
+            run("1 < 2"),
+            Bytecode {
+                constants: vec![bint(1), bint(2)],
+                instructions: vec![cte(1), cte(0), gt(), pop()],
+            },
+        );
     }
 
     #[test]
@@ -276,16 +292,5 @@ mod tests {
         assert_res(run("--2"), bint(2));
         assert_res(run("--2"), bint(2));
         assert_res(run("5 * (2 + 10)"), bint(60));
-    }
-
-    #[test]
-    fn testtt() {
-        assert_code(
-            run("1; 2; 3;"),
-            Bytecode {
-                constants: vec![bint(1), bint(2)],
-                instructions: vec![cte(0), cte(1), add()],
-            },
-        )
     }
 }

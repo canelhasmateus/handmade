@@ -9,7 +9,6 @@ pub enum Operation {
     Mul(),
     Div(),
     Gt(),
-    Lt(),
     Eq(),
     Neq(),
     Neg(),
@@ -26,7 +25,6 @@ impl Operation {
             Operation::Mul() => 1,
             Operation::Div() => 1,
             Operation::Gt() => 1,
-            Operation::Lt() => 1,
             Operation::Eq() => 1,
             Operation::Neq() => 1,
             Operation::Neg() => 1,
@@ -42,12 +40,11 @@ const SUB: u8 = 0x03;
 const MUL: u8 = 0x04;
 const DIV: u8 = 0x05;
 const GT: u8 = 0x06;
-const LT: u8 = 0x07;
-const EQ: u8 = 0x08;
-const NEQ: u8 = 0x09;
-const NEG: u8 = 0x10;
-const NOT: u8 = 0x11;
-const POP: u8 = 0x12;
+const EQ: u8 = 0x07;
+const NEQ: u8 = 0x08;
+const NEG: u8 = 0x09;
+const NOT: u8 = 0x10;
+const POP: u8 = 0x11;
 
 pub fn serialise<F>(op: &Operation, mut f: F)
 where
@@ -64,7 +61,6 @@ where
         Operation::Mul() => f(MUL),
         Operation::Div() => f(DIV),
         Operation::Gt() => f(GT),
-        Operation::Lt() => f(LT),
         Operation::Eq() => f(EQ),
         Operation::Neq() => f(NEQ),
         Operation::Neg() => f(NEG),
@@ -81,7 +77,6 @@ pub fn deserialise(ops: &[u8]) -> Operation {
         [MUL, ..] => mul(),
         [DIV, ..] => div(),
         [GT, ..] => gt(),
-        [LT, ..] => lt(),
         [EQ, ..] => eq(),
         [NEQ, ..] => neq(),
         [NEG, ..] => neg(),
@@ -124,9 +119,6 @@ pub fn div() -> Operation {
 pub fn gt() -> Operation {
     Operation::Gt()
 }
-pub fn lt() -> Operation {
-    Operation::Lt()
-}
 pub fn eq() -> Operation {
     Operation::Eq()
 }
@@ -158,7 +150,15 @@ impl Bytecode {
     pub fn emit(&mut self, op: Operation) {
         self.instructions.push(op)
     }
+
+    pub fn swap(&mut self) {
+        let last = self.instructions.pop();
+        let middle = self.instructions.pop();
+        last.map(|f| self.emit(f));
+        middle.map(|f| self.emit(f));
+    }
 }
+
 #[cfg(test)]
 mod tests {
 
