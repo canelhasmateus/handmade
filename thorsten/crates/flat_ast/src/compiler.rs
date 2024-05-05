@@ -2,8 +2,8 @@ use core::fmt;
 
 use crate::{
     bytecode::{
-        self, add, bbool, bint, cte, div, eq, gt, mul, neg, neq, not, pop, sub, ByteObj, Bytecode,
-        ConstantId, Operation,
+        self, add, bbool, bint, cte, div, eq, gt, mul, neg, neq, not, op_false, op_true, pop, sub,
+        ByteObj, Bytecode, ConstantId, Operation,
     },
     parser::{
         ExprTable, ExpressionId, RawExpression, RawExpressionKind, RawStatement, RawStatementKind,
@@ -56,6 +56,12 @@ impl Compiler {
                 let id = res.add(bint(value));
                 res.emit(Operation::Cte(id));
             }
+            RawExpressionKind::LiteralBoolean => {
+                match (&unit.source[range]).parse::<bool>().unwrap() {
+                    true => res.emit(op_true()),
+                    false => res.emit(op_false()),
+                }
+            }
             RawExpressionKind::Binary { op, left, right } => {
                 self.compile_expr(unit, left, res);
                 self.compile_expr(unit, right, res);
@@ -74,11 +80,6 @@ impl Compiler {
                 }
             }
             RawExpressionKind::LiteralString => todo!(),
-            RawExpressionKind::LiteralBoolean => {
-                let value = (&unit.source[range]).parse::<bool>().unwrap();
-                let id = res.add(bbool(value));
-                res.emit(Operation::Cte(id));
-            }
             RawExpressionKind::Parenthesized { expr } => self.compile_expr(unit, expr, res),
             RawExpressionKind::LiteralFunction { parameters, body } => todo!(),
             RawExpressionKind::LiteralArray { values } => todo!(),
@@ -157,6 +158,8 @@ impl Vm {
                     let value = pool.get(idx.0 as usize).unwrap();
                     state.push(*value)
                 }
+                Operation::True() => state.push(bbool(true)),
+                Operation::False() => state.push(bbool(false)),
                 Operation::Add()
                 | Operation::Sub()
                 | Operation::Mul()
@@ -217,7 +220,7 @@ fn run_binary(op: &Operation, state: &mut VmState) {
 #[cfg(test)]
 mod tests {
     use crate::{
-        bytecode::{add, bbool, bint, cte, gt, pop, ByteObj, Bytecode, Operation},
+        bytecode::{add, bbool, bint, cte, eq, gt, op_true, pop, ByteObj, Bytecode, Operation},
         parser::{raw_statements, ExprTable},
     };
 
@@ -274,6 +277,13 @@ mod tests {
                 instructions: vec![cte(1), cte(0), gt(), pop()],
             },
         );
+        assert_code(
+            run("true == true"),
+            Bytecode {
+                constants: vec![],
+                instructions: vec![op_true(), op_true(), eq(), pop()],
+            },
+        );
     }
 
     #[test]
@@ -286,11 +296,25 @@ mod tests {
         assert_res(run("4 < 2"), bbool(false));
         assert_res(run("4 == 2"), bbool(false));
         assert_res(run("4 != 2"), bbool(true));
-        assert_res(run("true == true"), bbool(true));
-        assert_res(run("false != true"), bbool(true));
         assert_res(run("(1 + 2) * (2 + 3)"), bint(15));
-        assert_res(run("--2"), bint(2));
-        assert_res(run("--2"), bint(2));
         assert_res(run("5 * (2 + 10)"), bint(60));
+
+        assert_res(run("true == true"), bbool(true));
+        assert_res(run("false == false"), bbool(true));
+        assert_res(run("true != false"), bbool(true));
+        assert_res(run("false != true"), bbool(true));
+        assert_res(run("true == false"), bbool(false));
+
+        assert_res(run("( 1 < 2 ) == true"), bbool(true));
+        assert_res(run("( 1 < 2 ) == false"), bbool(false));
+        assert_res(run("( 1 > 2 ) == true"), bbool(false));
+        assert_res(run("( 1 > 2 ) == false"), bbool(true));
+
+        assert_res(run("-2"), bint(-2));
+        assert_res(run("--2"), bint(2));
+        assert_res(run("!true"), bbool(false));
+        assert_res(run("!!true"), bbool(true));
+        assert_res(run("!false"), bbool(true));
+        assert_res(run("!!false"), bbool(false));
     }
 }

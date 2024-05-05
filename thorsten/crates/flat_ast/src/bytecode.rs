@@ -14,6 +14,8 @@ pub enum Operation {
     Neg(),
     Not(),
     Pop(),
+    True(),
+    False(),
 }
 
 impl Operation {
@@ -30,6 +32,8 @@ impl Operation {
             Operation::Neg() => 1,
             Operation::Not() => 1,
             Operation::Pop() => 1,
+            Operation::True() => 1,
+            Operation::False() => 1,
         }
     }
 }
@@ -45,6 +49,8 @@ const NEQ: u8 = 0x08;
 const NEG: u8 = 0x09;
 const NOT: u8 = 0x10;
 const POP: u8 = 0x11;
+const TRUE: u8 = 0x12;
+const FALSE: u8 = 0x13;
 
 pub fn serialise<F>(op: &Operation, mut f: F)
 where
@@ -66,6 +72,8 @@ where
         Operation::Neg() => f(NEG),
         Operation::Not() => f(NOT),
         Operation::Pop() => f(POP),
+        Operation::True() => f(TRUE),
+        Operation::False() => f(FALSE),
     }
 }
 
@@ -81,6 +89,8 @@ pub fn deserialise(ops: &[u8]) -> Operation {
         [NEQ, ..] => neq(),
         [NEG, ..] => neg(),
         [NOT, ..] => not(),
+        [TRUE, ..] => op_true(),
+        [FALSE, ..] => op_false(),
         _ => todo!(),
     }
 }
@@ -101,6 +111,7 @@ pub fn bint(arg: i64) -> ByteObj {
 pub fn bbool(arg: bool) -> ByteObj {
     ByteObj::Bool(arg)
 }
+
 pub fn cte(arg: u16) -> Operation {
     Operation::Cte(ConstantId(arg))
 }
@@ -133,6 +144,12 @@ pub fn not() -> Operation {
 }
 pub fn pop() -> Operation {
     Operation::Pop()
+}
+pub fn op_true() -> Operation {
+    Operation::True()
+}
+pub fn op_false() -> Operation {
+    Operation::False()
 }
 
 #[derive(Debug, PartialEq, Eq)]
