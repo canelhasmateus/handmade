@@ -12,6 +12,9 @@ pub enum Operation {
     Lt(),
     Eq(),
     Neq(),
+    Neg(),
+    Not(),
+    Pop(),
 }
 
 impl Operation {
@@ -26,6 +29,9 @@ impl Operation {
             Operation::Lt() => 1,
             Operation::Eq() => 1,
             Operation::Neq() => 1,
+            Operation::Neg() => 1,
+            Operation::Not() => 1,
+            Operation::Pop() => 1,
         }
     }
 }
@@ -39,6 +45,9 @@ const GT: u8 = 0x06;
 const LT: u8 = 0x07;
 const EQ: u8 = 0x08;
 const NEQ: u8 = 0x09;
+const NEG: u8 = 0x10;
+const NOT: u8 = 0x11;
+const POP: u8 = 0x12;
 
 pub fn serialise<F>(op: &Operation, mut f: F)
 where
@@ -58,6 +67,9 @@ where
         Operation::Lt() => f(LT),
         Operation::Eq() => f(EQ),
         Operation::Neq() => f(NEQ),
+        Operation::Neg() => f(NEG),
+        Operation::Not() => f(NOT),
+        Operation::Pop() => f(POP),
     }
 }
 
@@ -69,9 +81,11 @@ pub fn deserialise(ops: &[u8]) -> Operation {
         [MUL, ..] => mul(),
         [DIV, ..] => div(),
         [GT, ..] => gt(),
-        [LT, ..] => gt(),
-        [EQ, ..] => gt(),
-        [NEQ, ..] => gt(),
+        [LT, ..] => lt(),
+        [EQ, ..] => eq(),
+        [NEQ, ..] => neq(),
+        [NEG, ..] => neg(),
+        [NOT, ..] => not(),
         _ => todo!(),
     }
 }
@@ -82,11 +96,11 @@ fn concat_u8(left: u8, right: u8) -> u16 {
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum ByteObj {
-    Int(usize),
+    Int(i64),
     Bool(bool),
 }
 
-pub fn bint(arg: usize) -> ByteObj {
+pub fn bint(arg: i64) -> ByteObj {
     ByteObj::Int(arg)
 }
 pub fn bbool(arg: bool) -> ByteObj {
@@ -118,6 +132,15 @@ pub fn eq() -> Operation {
 }
 pub fn neq() -> Operation {
     Operation::Neq()
+}
+pub fn neg() -> Operation {
+    Operation::Neg()
+}
+pub fn not() -> Operation {
+    Operation::Not()
+}
+pub fn pop() -> Operation {
+    Operation::Pop()
 }
 
 #[derive(Debug, PartialEq, Eq)]
