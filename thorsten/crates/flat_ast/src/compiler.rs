@@ -90,15 +90,33 @@ impl Compiler {
 
             RawExpressionKind::Conditional { condition, positive, negative } => {
                 self.compile_expr(unit, *condition, res);
-                res.emit(jump_unless(9999));
-                let first_idx = res.index();
 
-                self.compile_block(unit, positive, res);
+                let first_idx = {
+                    res.emit(jump_unless(9999));
+                    let first_idx = res.index();
+                    self.compile_block(unit, positive, res);
+
+                    if let Some(Operation::Pop()) = res.last() {
+                        res.pop();
+                    }
+                    if !negative.is_empty() {
+                        res.emit(jump(9999))
+                    }
+
+                    first_idx
+                };
+
                 res.set(first_idx, jump_unless(res.position().0));
 
-                if let Some(Operation::Pop()) = res.last() {
-                    res.pop();
+                if !negative.is_empty() {
+                    let second_idx = res.index();
+                    self.compile_block(unit, negative, res);
+                    res.set(second_idx, jump(res.position().0));
+                    if let Some(Operation::Pop()) = res.last() {
+                        res.pop();
+                    }
                 }
+
             }
             RawExpressionKind::Call { function, arguments } => todo!(),
             RawExpressionKind::IndexExpression { left, idx } => todo!(),
@@ -369,6 +387,31 @@ mod tests {
                     // 0008
                     cte(1),
                     // 0011
+                    pop(),
+                ],
+            },
+        );
+        assert_code(
+            run("if ( true ) { 10 } else { 20 }; 3333"),
+            Bytecode {
+                byte_pos: 20,
+                constants: vec![bint(10), bint(20), bint(3333)],
+                instructions: vec![
+                    // 0000
+                    op_true(),
+                    // 0001
+                    jump_unless(10),
+                    // 0004
+                    cte(0),
+                    // 0007
+                    jump(14),
+                    // 0010
+                    cte(1),
+                    // 0013
+                    pop(),
+                    // 0014
+                    cte(2),
+                    // 0017
                     pop(),
                 ],
             },
