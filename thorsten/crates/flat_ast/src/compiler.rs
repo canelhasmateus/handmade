@@ -2,13 +2,15 @@ use core::fmt;
 
 use crate::{
     bytecode::{
-        self, add, bbool, bint, cte, div, eq, gt, mul, neg, neq, not, op_false, op_true, pop, sub,
-        ByteObj, Bytecode, ConstantId, Operation,
+        add, bbool, bint, Bytecode, ByteObj, cte, div, eq, gt, jump_unless, mul, neg, neq,
+        not, op_false, op_true, Operation, pop, sub,
     },
     parser::{
-        ExprTable, ExpressionId, RawExpression, RawExpressionKind, RawStatement, RawStatementKind,
+        CompUnit, ExpressionId, RawExpression, RawExpressionKind, RawStatement, RawStatementKind,
+        StatementId, UnaryOp,
     },
 };
+use crate::bytecode::jump;
 
 struct Instructions {
     instructions: Vec<Operation>,
@@ -16,55 +18,48 @@ struct Instructions {
 
 struct Compiler {}
 
-struct CompUnit<'a> {
-    source: &'a str,
-    table: ExprTable,
-    statements: Vec<RawStatement>,
-}
-
 impl Compiler {
     pub fn new() -> Compiler {
         Compiler {}
     }
 
     pub fn compile(&self, unit: &CompUnit) -> Bytecode {
-        let mut res = Bytecode { constants: vec![], instructions: vec![] };
+        let mut res = Bytecode { byte_pos: 0, constants: vec![], instructions: vec![] };
         for statement in &unit.statements {
-            self.compile_statement(unit, statement, &mut res)
+            self.compile_statement(unit, *statement, &mut res)
         }
         res
     }
 
-    fn compile_statement(&self, unit: &CompUnit, statement: &RawStatement, res: &mut Bytecode) {
-        match statement.kind {
+    fn compile_statement(&self, unit: &CompUnit, statement: StatementId, res: &mut Bytecode) {
+        let RawStatement { kind, .. } = unit.statement(statement);
+        match kind {
             RawStatementKind::LetStmt { name, expr } => todo!(),
             RawStatementKind::ReturnStmt { expr } => todo!(),
             RawStatementKind::ExprStmt { expr } => {
-                self.compile_expr(unit, &expr, res);
+                self.compile_expr(unit, *expr, res);
                 res.emit(pop())
             }
             RawStatementKind::IllegalStatement => todo!(),
-            RawStatementKind::EndStatement => todo!(),
+            RawStatementKind::EndStatement => {}
         }
     }
 
-    fn compile_expr(&self, unit: &CompUnit, expr: &ExpressionId, res: &mut Bytecode) {
-        let RawExpression { range, kind } = unit.table.get_expression(&expr);
+    fn compile_expr(&self, unit: &CompUnit, expr: ExpressionId, res: &mut Bytecode) {
+        let RawExpression { range, kind } = unit.expression(expr);
         match kind {
             RawExpressionKind::LiteralInteger => {
-                let value = (&unit.source[range]).parse::<i64>().unwrap();
+                let value = unit.int(range).unwrap();
                 let id = res.add(bint(value));
                 res.emit(Operation::Cte(id));
             }
-            RawExpressionKind::LiteralBoolean => {
-                match (&unit.source[range]).parse::<bool>().unwrap() {
-                    true => res.emit(op_true()),
-                    false => res.emit(op_false()),
-                }
-            }
+            RawExpressionKind::LiteralBoolean => match unit.bool(range).unwrap() {
+                true => res.emit(op_true()),
+                false => res.emit(op_false()),
+            },
             RawExpressionKind::Binary { op, left, right } => {
-                self.compile_expr(unit, left, res);
-                self.compile_expr(unit, right, res);
+                self.compile_expr(unit, *left, res);
+                self.compile_expr(unit, *right, res);
                 match op {
                     crate::parser::BinaryOp::Plus => res.emit(add()),
                     crate::parser::BinaryOp::Minus => res.emit(sub()),
@@ -80,21 +75,30 @@ impl Compiler {
                 }
             }
             RawExpressionKind::LiteralString => todo!(),
-            RawExpressionKind::Parenthesized { expr } => self.compile_expr(unit, expr, res),
+            RawExpressionKind::Parenthesized { expr } => self.compile_expr(unit, *expr, res),
             RawExpressionKind::LiteralFunction { parameters, body } => todo!(),
             RawExpressionKind::LiteralArray { values } => todo!(),
             RawExpressionKind::LiteralHash { values } => todo!(),
             RawExpressionKind::Identifier => todo!(),
             RawExpressionKind::Unary { op, expr } => {
-                self.compile_expr(unit, expr, res);
+                self.compile_expr(unit, *expr, res);
                 match op {
-                    crate::parser::UnaryOp::OpNot => res.emit(not()),
-                    crate::parser::UnaryOp::OpNeg => res.emit(neg()),
+                    UnaryOp::OpNot => res.emit(not()),
+                    UnaryOp::OpNeg => res.emit(neg()),
                 }
             }
 
             RawExpressionKind::Conditional { condition, positive, negative } => {
-                todo!()
+                self.compile_expr(unit, *condition, res);
+                res.emit(jump_unless(9999));
+                let first_idx = res.index();
+
+                self.compile_block(unit, positive, res);
+                res.set(first_idx, jump_unless(res.position().0));
+
+                if let Some(Operation::Pop()) = res.last() {
+                    res.pop();
+                }
             }
             RawExpressionKind::Call { function, arguments } => todo!(),
             RawExpressionKind::IndexExpression { left, idx } => todo!(),
@@ -107,12 +111,14 @@ impl Compiler {
         let obj = ByteObj::Int(int);
         let id = res.constants.len();
         res.constants.push(obj);
-        emit(cte(id as u16), res)
+        res.emit(cte(id as u16))
     }
-}
 
-fn emit(op: Operation, res: &mut Bytecode) {
-    res.instructions.push(op)
+    fn compile_block(&self, unit: &CompUnit, block: &[StatementId], res: &mut Bytecode) {
+        for ele in block {
+            self.compile_statement(unit, *ele, res);
+        }
+    }
 }
 
 struct VmState {
@@ -137,6 +143,14 @@ impl VmState {
         self.sp -= 1;
         self.stack[self.sp]
     }
+
+    fn peek(&self) -> Option<ByteObj> {
+        if self.sp == 0 {
+            None
+        } else {
+            Some(self.stack[self.sp - 1])
+        }
+    }
 }
 
 struct Vm {
@@ -150,10 +164,24 @@ impl Vm {
 
     fn run(&self, state: &mut VmState) {
         let pool = &self.bytecode.constants;
-        for instructions in &self.bytecode.instructions {
-            println!("{:?}", state);
-
-            match instructions {
+        let instructions = &self.bytecode.instructions;
+        let mut i = 0;
+        while i < instructions.len() {
+            println!("{:?}: {:?}", i, state);
+            match &instructions[i] {
+                Operation::Jump(pos) => {
+                    i = pos.0 as usize;
+                    continue;
+                }
+                Operation::JumpUnless(pos) => match state.peek() {
+                    Some(ByteObj::Bool(b)) => {
+                        if b {
+                            i = pos.0 as usize;
+                            continue;
+                        }
+                    }
+                    _ => unreachable!(),
+                },
                 Operation::Cte(idx) => {
                     let value = pool.get(idx.0 as usize).unwrap();
                     state.push(*value)
@@ -166,7 +194,7 @@ impl Vm {
                 | Operation::Div()
                 | Operation::Gt()
                 | Operation::Eq()
-                | Operation::Neq() => run_binary(instructions, state),
+                | Operation::Neq() => run_binary(&instructions[i], state),
 
                 Operation::Neg() => {
                     let value = state.pop();
@@ -186,6 +214,7 @@ impl Vm {
                     state.pop();
                 }
             }
+            i += 1;
         }
     }
 }
@@ -220,11 +249,12 @@ fn run_binary(op: &Operation, state: &mut VmState) {
 #[cfg(test)]
 mod tests {
     use crate::{
-        bytecode::{add, bbool, bint, cte, eq, gt, op_true, pop, ByteObj, Bytecode, Operation},
-        parser::{raw_statements, ExprTable},
+        bytecode::{add, bbool, bint, Bytecode, ByteObj, cte, eq, gt, jump_unless, op_true, pop},
+        parser::unit,
     };
+    use crate::bytecode::jump;
 
-    use super::{CompUnit, Compiler, Vm, VmState};
+    use super::{Compiler, Vm, VmState};
 
     struct VmResult {
         vm: Vm,
@@ -233,15 +263,13 @@ mod tests {
 
     fn run(source: &str) -> VmResult {
         let vm = {
-            let mut table = ExprTable::new();
-            let statements = raw_statements(source, &mut table);
-            let unit = CompUnit { source, table, statements };
+            let unit = unit(source);
             let bytecode = Compiler::new().compile(&unit);
             Vm::new(bytecode)
         };
 
         let mut state = VmState { stack: [ByteObj::Int(0); 1048], sp: 0 };
-        let result = vm.run(&mut state);
+        vm.run(&mut state);
         VmResult { vm, state }
     }
 
@@ -258,6 +286,7 @@ mod tests {
         assert_code(
             run("1 + 2"),
             Bytecode {
+                byte_pos: 8,
                 constants: vec![bint(1), bint(2)],
                 instructions: vec![cte(0), cte(1), add(), pop()],
             },
@@ -266,6 +295,7 @@ mod tests {
         assert_code(
             run("1 > 2"),
             Bytecode {
+                byte_pos: 8,
                 constants: vec![bint(1), bint(2)],
                 instructions: vec![cte(0), cte(1), gt(), pop()],
             },
@@ -273,6 +303,7 @@ mod tests {
         assert_code(
             run("1 < 2"),
             Bytecode {
+                byte_pos: 14,
                 constants: vec![bint(1), bint(2)],
                 instructions: vec![cte(1), cte(0), gt(), pop()],
             },
@@ -280,6 +311,7 @@ mod tests {
         assert_code(
             run("true == true"),
             Bytecode {
+                byte_pos: 4,
                 constants: vec![],
                 instructions: vec![op_true(), op_true(), eq(), pop()],
             },
@@ -316,5 +348,30 @@ mod tests {
         assert_res(run("!!true"), bbool(true));
         assert_res(run("!false"), bbool(true));
         assert_res(run("!!false"), bbool(false));
+    }
+
+    #[test]
+    fn compiles_conditionals() {
+        assert_code(
+            run("if ( true ) { 10 }; 3333"),
+            Bytecode {
+                byte_pos: 13,
+                constants: vec![bint(10), bint(3333)],
+                instructions: vec![
+                    // 0000
+                    op_true(),
+                    // 0001
+                    jump_unless(7),
+                    // 0004
+                    cte(0),
+                    // 0007
+                    pop(),
+                    // 0008
+                    cte(1),
+                    // 0011
+                    pop(),
+                ],
+            },
+        );
     }
 }

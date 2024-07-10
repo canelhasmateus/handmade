@@ -149,6 +149,53 @@ impl ExprTable {
     }
 }
 
+pub(crate) struct CompUnit<'a> {
+    pub source: &'a str,
+    table: ExprTable,
+    pub statements: Vec<StatementId>,
+}
+
+pub(crate) fn unit(source: &str) -> CompUnit {
+    let mut statements = Vec::new();
+    let table = {
+        let mut is_end = false;
+        let mut table = ExprTable::new();
+        let mut current = Range::new(0, 0);
+
+        while !is_end {
+            let statement = statement_after(source, &current, &mut table);
+
+            current = statement.range;
+            is_end = matches!(statement.kind, RawStatementKind::EndStatement);
+            statements.push(table.add_statement(statement));
+        }
+
+        table
+    };
+
+    CompUnit { source, table, statements }
+}
+
+impl<'a> CompUnit<'_> {
+    pub fn text(&self, range: &Range) -> &str {
+        &self.source[range]
+    }
+
+    pub fn bool(&self, range: &Range) -> Result<bool, std::str::ParseBoolError> {
+        self.source[range].parse::<bool>()
+    }
+    pub fn int(&self, range: &Range) -> Result<i64, std::num::ParseIntError> {
+        self.source[range].parse::<i64>()
+    }
+
+    pub fn statement(&self, id: StatementId) -> &RawStatement {
+        &self.table.statements.get(id.0).unwrap()
+    }
+    pub fn expression(&self, id: ExpressionId) -> &RawExpression {
+        &self.table.expressions.get(id.0).unwrap()
+    }
+}
+
 pub(crate) fn raw_statements(input: &str, table: &mut ExprTable) -> Vec<RawStatement> {
     let mut current = Range::new(0, 0);
     let iter = std::iter::from_fn(move || {

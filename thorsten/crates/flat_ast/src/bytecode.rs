@@ -2,6 +2,9 @@
 pub struct ConstantId(pub u16);
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct BytePosition(pub u16);
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Operation {
     Cte(ConstantId),
     Add(),
@@ -16,12 +19,16 @@ pub enum Operation {
     Pop(),
     True(),
     False(),
+    Jump(BytePosition),
+    JumpUnless(BytePosition),
 }
 
 impl Operation {
-    pub fn len(&self) -> usize {
+    pub fn byte_length(&self) -> usize {
         match self {
             Operation::Cte(_) => 3,
+            Operation::Jump(_) => 3,
+            Operation::JumpUnless(_) => 3,
             Operation::Add() => 1,
             Operation::Sub() => 1,
             Operation::Mul() => 1,
@@ -51,6 +58,8 @@ const NOT: u8 = 0x10;
 const POP: u8 = 0x11;
 const TRUE: u8 = 0x12;
 const FALSE: u8 = 0x13;
+const JUMP: u8 = 0x14;
+const JUMP_IF: u8 = 0x15;
 
 pub fn serialise<F>(op: &Operation, mut f: F)
 where
@@ -74,12 +83,24 @@ where
         Operation::Pop() => f(POP),
         Operation::True() => f(TRUE),
         Operation::False() => f(FALSE),
+        Operation::Jump(pos) => {
+            f(JUMP);
+            f((pos.0 >> 8) as u8);
+            f(pos.0 as u8);
+        }
+        Operation::JumpUnless(pos) => {
+            f(JUMP_IF);
+            f((pos.0 >> 8) as u8);
+            f(pos.0 as u8);
+        }
     }
 }
 
 pub fn deserialise(ops: &[u8]) -> Operation {
     match ops {
         [CTE, left, right, ..] => cte(concat_u8(*left, *right)),
+        [JUMP, left, right, ..] => jump(concat_u8(*left, *right)),
+        [JUMP_IF, left, right, ..] => jump_unless(concat_u8(*left, *right)),
         [ADD, ..] => add(),
         [SUB, ..] => sub(),
         [MUL, ..] => mul(),
@@ -152,8 +173,17 @@ pub fn op_false() -> Operation {
     Operation::False()
 }
 
+pub fn jump(pos: u16) -> Operation {
+    Operation::Jump(BytePosition(pos))
+}
+
+pub fn jump_unless(pos: u16) -> Operation {
+    Operation::JumpUnless(BytePosition(pos))
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Bytecode {
+    pub byte_pos: usize,
     pub constants: Vec<ByteObj>,
     pub instructions: Vec<Operation>,
 }
@@ -164,22 +194,55 @@ impl Bytecode {
         let id = self.constants.len() - 1;
         ConstantId(id as u16)
     }
+
+    pub fn set(&mut self, pos: usize, op: Operation) {
+        self.instructions[pos] = op;
+    }
+
     pub fn emit(&mut self, op: Operation) {
-        self.instructions.push(op)
+        self.byte_pos += op.byte_length();
+        self.instructions.push(op);
+    }
+
+    pub fn index(&self) -> usize {
+        return self.instructions.len() - 1
+    }
+
+    pub fn position(&self) -> BytePosition {
+        return BytePosition(self.byte_pos as u16 - 1)
     }
 
     pub fn swap(&mut self) {
         let last = self.instructions.pop();
         let middle = self.instructions.pop();
-        last.map(|f| self.emit(f));
-        middle.map(|f| self.emit(f));
+        if let Some(f) = last {
+            self.emit(f)
+        }
+        if let Some(f) = middle {
+            self.emit(f)
+        }
+    }
+
+    pub fn last(&self) -> Option<&Operation> {
+        self.instructions.last()
+    }
+
+    pub fn previous(&self) -> Option<&Operation> {
+        if let [.., previous, _last] = &self.instructions[..] {
+            Some(previous)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn pop(&mut self) -> Option<Operation> {
+        self.instructions.pop()
     }
 }
 
 #[cfg(test)]
 mod tests {
-
-    use crate::bytecode::{deserialise, serialise, ConstantId, Operation};
+    use crate::bytecode::{ConstantId, deserialise, Operation, serialise};
 
     fn assert_serialises(op: Operation, bytes: &[u8]) {
         fn from_op(op: &Operation) -> Vec<u8> {
@@ -190,7 +253,7 @@ mod tests {
 
         fn to_op(op: &[u8]) -> Operation {
             let op = deserialise(op);
-            debug_assert!(op.len() == op.len());
+            debug_assert!(op.byte_length() == op.byte_length());
             op
         }
 
