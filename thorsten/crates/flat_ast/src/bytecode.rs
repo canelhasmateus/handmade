@@ -1,3 +1,5 @@
+use crate::parser::{CompUnit, ExpressionId, RawExpression, RawExpressionKind, RawStatement, RawStatementKind, StatementId, UnaryOp};
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct ConstantId(pub u16);
 
@@ -23,101 +25,11 @@ pub enum Operation {
     JumpUnless(BytePosition),
 }
 
-impl Operation {
-    pub fn byte_length(&self) -> usize {
-        match self {
-            Operation::Cte(_) => 3,
-            Operation::Jump(_) => 3,
-            Operation::JumpUnless(_) => 3,
-            Operation::Add() => 1,
-            Operation::Sub() => 1,
-            Operation::Mul() => 1,
-            Operation::Div() => 1,
-            Operation::Gt() => 1,
-            Operation::Eq() => 1,
-            Operation::Neq() => 1,
-            Operation::Neg() => 1,
-            Operation::Not() => 1,
-            Operation::Pop() => 1,
-            Operation::True() => 1,
-            Operation::False() => 1,
-        }
-    }
-}
-
-const CTE: u8 = 0x01;
-const ADD: u8 = 0x02;
-const SUB: u8 = 0x03;
-const MUL: u8 = 0x04;
-const DIV: u8 = 0x05;
-const GT: u8 = 0x06;
-const EQ: u8 = 0x07;
-const NEQ: u8 = 0x08;
-const NEG: u8 = 0x09;
-const NOT: u8 = 0x10;
-const POP: u8 = 0x11;
-const TRUE: u8 = 0x12;
-const FALSE: u8 = 0x13;
-const JUMP: u8 = 0x14;
-const JUMP_IF: u8 = 0x15;
-
-pub fn serialise<F>(op: &Operation, mut f: F)
-where
-    F: FnMut(u8),
-{
-    match op {
-        Operation::Cte(idx) => {
-            f(CTE);
-            f((idx.0 >> 8) as u8);
-            f(idx.0 as u8);
-        }
-        Operation::Add() => f(ADD),
-        Operation::Sub() => f(SUB),
-        Operation::Mul() => f(MUL),
-        Operation::Div() => f(DIV),
-        Operation::Gt() => f(GT),
-        Operation::Eq() => f(EQ),
-        Operation::Neq() => f(NEQ),
-        Operation::Neg() => f(NEG),
-        Operation::Not() => f(NOT),
-        Operation::Pop() => f(POP),
-        Operation::True() => f(TRUE),
-        Operation::False() => f(FALSE),
-        Operation::Jump(pos) => {
-            f(JUMP);
-            f((pos.0 >> 8) as u8);
-            f(pos.0 as u8);
-        }
-        Operation::JumpUnless(pos) => {
-            f(JUMP_IF);
-            f((pos.0 >> 8) as u8);
-            f(pos.0 as u8);
-        }
-    }
-}
-
-pub fn deserialise(ops: &[u8]) -> Operation {
-    match ops {
-        [CTE, left, right, ..] => cte(concat_u8(*left, *right)),
-        [JUMP, left, right, ..] => jump(concat_u8(*left, *right)),
-        [JUMP_IF, left, right, ..] => jump_unless(concat_u8(*left, *right)),
-        [ADD, ..] => add(),
-        [SUB, ..] => sub(),
-        [MUL, ..] => mul(),
-        [DIV, ..] => div(),
-        [GT, ..] => gt(),
-        [EQ, ..] => eq(),
-        [NEQ, ..] => neq(),
-        [NEG, ..] => neg(),
-        [NOT, ..] => not(),
-        [TRUE, ..] => op_true(),
-        [FALSE, ..] => op_false(),
-        _ => todo!(),
-    }
-}
-
-fn concat_u8(left: u8, right: u8) -> u16 {
-    (left as u16) << 8 | (right as u16)
+#[derive(Debug, PartialEq, Eq)]
+pub struct Bytecode {
+    pub byte_pos: usize,
+    pub constants: Vec<ByteObj>,
+    pub instructions: Vec<Operation>,
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -126,66 +38,15 @@ pub enum ByteObj {
     Bool(bool),
 }
 
-pub fn bint(arg: i64) -> ByteObj {
-    ByteObj::Int(arg)
-}
-pub fn bbool(arg: bool) -> ByteObj {
-    ByteObj::Bool(arg)
-}
-
-pub fn cte(arg: u16) -> Operation {
-    Operation::Cte(ConstantId(arg))
-}
-pub fn add() -> Operation {
-    Operation::Add()
-}
-pub fn sub() -> Operation {
-    Operation::Sub()
-}
-pub fn mul() -> Operation {
-    Operation::Mul()
-}
-pub fn div() -> Operation {
-    Operation::Div()
-}
-pub fn gt() -> Operation {
-    Operation::Gt()
-}
-pub fn eq() -> Operation {
-    Operation::Eq()
-}
-pub fn neq() -> Operation {
-    Operation::Neq()
-}
-pub fn neg() -> Operation {
-    Operation::Neg()
-}
-pub fn not() -> Operation {
-    Operation::Not()
-}
-pub fn pop() -> Operation {
-    Operation::Pop()
-}
-pub fn op_true() -> Operation {
-    Operation::True()
-}
-pub fn op_false() -> Operation {
-    Operation::False()
-}
-
-pub fn jump(pos: u16) -> Operation {
-    Operation::Jump(BytePosition(pos))
-}
-
-pub fn jump_unless(pos: u16) -> Operation {
-    Operation::JumpUnless(BytePosition(pos))
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct Bytecode {
-    pub byte_pos: usize,
-    pub constants: Vec<ByteObj>,
-    pub instructions: Vec<Operation>,
+impl Operation {
+    pub fn byte_length(&self) -> usize {
+        match self {
+            Operation::Cte(_) => 3,
+            Operation::Jump(_) => 3,
+            Operation::JumpUnless(_) => 3,
+            __ => 1
+        }
+    }
 }
 
 impl Bytecode {
@@ -240,34 +101,296 @@ impl Bytecode {
     }
 }
 
+pub struct Compiler {}
+
+impl Compiler {
+    pub fn new() -> Compiler {
+        Compiler {}
+    }
+
+    pub fn compile(&self, unit: &CompUnit) -> Bytecode {
+        let mut res = Bytecode { byte_pos: 0, constants: vec![], instructions: vec![] };
+        for statement in &unit.statements {
+            self.compile_statement(unit, *statement, &mut res)
+        }
+        res
+    }
+
+    fn compile_statement(&self, unit: &CompUnit, statement: StatementId, res: &mut Bytecode) {
+        let RawStatement { kind, .. } = unit.statement(statement);
+        match kind {
+            RawStatementKind::LetStmt { name, expr } => todo!(),
+            RawStatementKind::ReturnStmt { expr } => todo!(),
+            RawStatementKind::ExprStmt { expr } => {
+                self.compile_expr(unit, *expr, res);
+                res.emit(Operation::Pop())
+            }
+            RawStatementKind::IllegalStatement => todo!(),
+            RawStatementKind::EndStatement => {}
+        }
+    }
+
+    fn compile_expr(&self, unit: &CompUnit, expr: ExpressionId, res: &mut Bytecode) {
+        let RawExpression { range, kind } = unit.expression(expr);
+        match kind {
+            RawExpressionKind::LiteralInteger => {
+                let value = unit.int(range).unwrap();
+                let value = ByteObj::Int(value);
+
+                let id = res.add(value);
+                let id = Operation::Cte(id);
+                res.emit(id);
+            }
+
+            RawExpressionKind::LiteralBoolean => match unit.bool(range).unwrap() {
+                true => res.emit(Operation::True()),
+                false => res.emit(Operation::False()),
+            },
+            RawExpressionKind::Binary { op, left, right } => {
+                self.compile_expr(unit, *left, res);
+                self.compile_expr(unit, *right, res);
+                match op {
+                    crate::parser::BinaryOp::Plus => res.emit(Operation::Add()),
+                    crate::parser::BinaryOp::Minus => res.emit(Operation::Sub()),
+                    crate::parser::BinaryOp::Times => res.emit(Operation::Mul()),
+                    crate::parser::BinaryOp::Div => res.emit(Operation::Div()),
+                    crate::parser::BinaryOp::Greater => res.emit(Operation::Gt()),
+                    crate::parser::BinaryOp::Lesser => {
+                        res.swap();
+                        res.emit(Operation::Gt())
+                    }
+                    crate::parser::BinaryOp::Equals => res.emit(Operation::Eq()),
+                    crate::parser::BinaryOp::Differs => res.emit(Operation::Neq()),
+                }
+            }
+            RawExpressionKind::LiteralString => todo!(),
+            RawExpressionKind::Parenthesized { expr } => self.compile_expr(unit, *expr, res),
+            RawExpressionKind::LiteralFunction { parameters, body } => todo!(),
+            RawExpressionKind::LiteralArray { values } => todo!(),
+            RawExpressionKind::LiteralHash { values } => todo!(),
+            RawExpressionKind::Identifier => todo!(),
+            RawExpressionKind::Unary { op, expr } => {
+                self.compile_expr(unit, *expr, res);
+                match op {
+                    UnaryOp::OpNot => res.emit(Operation::Not()),
+                    UnaryOp::OpNeg => res.emit(Operation::Neg()),
+                }
+            }
+
+            RawExpressionKind::Conditional { condition, positive, negative } => {
+                self.compile_expr(unit, *condition, res);
+
+                let first_idx = {
+                    res.emit(Operation::JumpUnless(BytePosition(9999)));
+                    let first_idx = res.index();
+                    self.compile_block(unit, positive, res);
+
+                    if let Some(Operation::Pop()) = res.last() {
+                        res.pop();
+                    }
+                    if !negative.is_empty() {
+                        res.emit(Operation::Jump(BytePosition(9999)))
+                    }
+
+                    first_idx
+                };
+
+                res.set(first_idx, Operation::JumpUnless(res.position()));
+
+                if !negative.is_empty() {
+                    let second_idx = res.index();
+                    self.compile_block(unit, negative, res);
+                    res.set(second_idx, Operation::Jump(res.position()));
+                    if let Some(Operation::Pop()) = res.last() {
+                        res.pop();
+                    }
+                }
+            }
+            RawExpressionKind::Call { function, arguments } => todo!(),
+            RawExpressionKind::IndexExpression { left, idx } => todo!(),
+            RawExpressionKind::IllegalExpression => todo!(),
+        }
+    }
+
+    fn compile_integer(&self, source: &str, res: &mut Bytecode) {
+        let int = source.parse::<i64>().unwrap();
+        let obj = ByteObj::Int(int);
+        let id = res.constants.len();
+        res.constants.push(obj);
+        res.emit(Operation::Cte(ConstantId(id as u16)))
+    }
+
+    fn compile_block(&self, unit: &CompUnit, block: &[StatementId], res: &mut Bytecode) {
+        for ele in block {
+            self.compile_statement(unit, *ele, res);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::bytecode::{ConstantId, deserialise, Operation, serialise};
+    use crate::bytecode::{Bytecode, ByteObj, BytePosition, Compiler, ConstantId, Operation};
+    use crate::parser::unit;
 
-    fn assert_serialises(op: Operation, bytes: &[u8]) {
-        fn from_op(op: &Operation) -> Vec<u8> {
-            let mut res = vec![];
-            serialise(op, |byte| res.push(byte));
-            res
-        }
+    fn bint(arg: i64) -> ByteObj {
+        ByteObj::Int(arg)
+    }
 
-        fn to_op(op: &[u8]) -> Operation {
-            let op = deserialise(op);
-            debug_assert!(op.byte_length() == op.byte_length());
-            op
-        }
+    fn bbool(arg: bool) -> ByteObj {
+        ByteObj::Bool(arg)
+    }
 
-        assert_eq!(from_op(&op), bytes);
-        assert_eq!(to_op(bytes), op);
+    fn cte(arg: u16) -> Operation {
+        Operation::Cte(ConstantId(arg))
+    }
+
+    fn add() -> Operation {
+        Operation::Add()
+    }
+
+    fn sub() -> Operation {
+        Operation::Sub()
+    }
+
+    fn mul() -> Operation {
+        Operation::Mul()
+    }
+
+    fn div() -> Operation {
+        Operation::Div()
+    }
+
+    fn gt() -> Operation {
+        Operation::Gt()
+    }
+
+    fn eq() -> Operation {
+        Operation::Eq()
+    }
+
+    fn neq() -> Operation {
+        Operation::Neq()
+    }
+
+    fn neg() -> Operation {
+        Operation::Neg()
+    }
+
+    fn not() -> Operation {
+        Operation::Not()
+    }
+
+    fn pop() -> Operation {
+        Operation::Pop()
+    }
+
+    fn op_true() -> Operation {
+        Operation::True()
+    }
+
+    fn op_false() -> Operation {
+        Operation::False()
+    }
+
+    fn jump(pos: u16) -> Operation {
+        Operation::Jump(BytePosition(pos))
+    }
+
+    fn jump_unless(pos: u16) -> Operation {
+        Operation::JumpUnless(BytePosition(pos))
+    }
+
+    fn assert_code(source: &str, expected: Bytecode) {
+        let unit = unit(source);
+        let bytecode = Compiler::new().compile(&unit);
+        assert_eq!(bytecode, expected);
     }
 
     #[test]
-    fn serialises_op_cte() {
-        assert_serialises(Operation::Cte(ConstantId(65534)), &[0x01, 0xFF, 0xFE])
+    fn compiles_integer_arithmetic() {
+        assert_code(
+            "1 + 2",
+            Bytecode {
+                byte_pos: 8,
+                constants: vec![bint(1), bint(2)],
+                instructions: vec![cte(0), cte(1), add(), pop()],
+            },
+        );
+
+        assert_code(
+            "1 > 2",
+            Bytecode {
+                byte_pos: 8,
+                constants: vec![bint(1), bint(2)],
+                instructions: vec![cte(0), cte(1), gt(), pop()],
+            },
+        );
+        assert_code(
+            "1 < 2",
+            Bytecode {
+                byte_pos: 14,
+                constants: vec![bint(1), bint(2)],
+                instructions: vec![cte(1), cte(0), gt(), pop()],
+            },
+        );
+        assert_code(
+            "true == true",
+            Bytecode {
+                byte_pos: 4,
+                constants: vec![],
+                instructions: vec![op_true(), op_true(), eq(), pop()],
+            },
+        );
     }
 
     #[test]
-    fn serialises_op_add() {
-        assert_serialises(Operation::Add(), &[0x02])
+    fn compiles_conditionals() {
+        assert_code(
+            "if ( true ) { 10 }; 3333",
+            Bytecode {
+                byte_pos: 13,
+                constants: vec![bint(10), bint(3333)],
+                instructions: vec![
+                    // 0000
+                    op_true(),
+                    // 0001
+                    jump_unless(7),
+                    // 0004
+                    cte(0),
+                    // 0007
+                    pop(),
+                    // 0008
+                    cte(1),
+                    // 0011
+                    pop(),
+                ],
+            },
+        );
+
+        assert_code(
+            "if ( true ) { 10 } else { 20 }; 3333",
+            Bytecode {
+                byte_pos: 20,
+                constants: vec![bint(10), bint(20), bint(3333)],
+                instructions: vec![
+                    // 0000
+                    op_true(),
+                    // 0001
+                    jump_unless(10),
+                    // 0004
+                    cte(0),
+                    // 0007
+                    jump(14),
+                    // 0010
+                    cte(1),
+                    // 0013
+                    pop(),
+                    // 0014
+                    cte(2),
+                    // 0017
+                    pop(),
+                ],
+            },
+        );
     }
 }

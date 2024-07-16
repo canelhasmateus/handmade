@@ -1,5 +1,5 @@
 use crate::{
-    lexer::{token_after, RawToken, TokenKind},
+    lexer::{RawToken, token_after, TokenKind},
     range::Range,
 };
 
@@ -682,12 +682,13 @@ fn expect_token(
         }),
     }
 }
+
 #[cfg(test)]
 mod tests {
     use crate::{
         parser::{
-            statement_after, BinaryOp, ExprTable, ExpressionId, RawExpression, RawExpressionKind,
-            RawStatement, RawStatementKind, StatementId, UnaryOp,
+            BinaryOp, ExpressionId, ExprTable, RawExpression, RawExpressionKind, RawStatement,
+            RawStatementKind, statement_after, StatementId, UnaryOp,
         },
         range::Range,
     };
