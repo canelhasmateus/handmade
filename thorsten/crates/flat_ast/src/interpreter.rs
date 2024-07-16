@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::parser::{raw_statements, ExprTable};
+use crate::parser::{raw_statements, ExprTable, LiteralFunction, LiteralArray, LiteralHash, Unary, Binary, Conditional, Call, IndexExpression, LetStmt, ReturnStmt, ExprStmt};
 use crate::parser::{
     BinaryOp, ExpressionId, RawExpression, RawExpressionKind, RawStatement, RawStatementKind,
     StatementId, UnaryOp,
@@ -143,13 +143,13 @@ pub fn eval(input: &str) -> Object {
 impl Interpreter<'_> {
     fn eval_statement(&self, statement: &RawStatement, env: &mut Env) -> Return {
         match statement.kind {
-            RawStatementKind::ExprStmt { ref expr } => self.eval_expr(expr, env),
-            RawStatementKind::ReturnStmt { ref expr } => match self.eval_expr(expr, env) {
+            RawStatementKind::ExprStmt(ExprStmt { ref expr }) => self.eval_expr(expr, env),
+            RawStatementKind::ReturnStmt(ReturnStmt { ref expr }) => match self.eval_expr(expr, env) {
                 Return::Value(v) => Return::Return(v),
                 Return::Return(_) => unreachable!("return in return position"),
                 e @ Return::Error(_) => e,
             },
-            RawStatementKind::LetStmt { ref expr, ref name } => match self.eval_expr(expr, env) {
+            RawStatementKind::LetStmt(LetStmt { ref expr, ref name }) => match self.eval_expr(expr, env) {
                 Return::Return(_) => unreachable!("Return in let statement position"),
                 e @ Return::Error(_) => e,
                 Return::Value(v) => {
@@ -175,23 +175,23 @@ impl Interpreter<'_> {
             RawExpressionKind::LiteralInteger => self.eval_integer(range),
             RawExpressionKind::LiteralBoolean => self.eval_bool(range),
             RawExpressionKind::Identifier => self.eval_identifier(range, env),
-            RawExpressionKind::LiteralArray { values } => self.eval_list(values, env),
-            RawExpressionKind::LiteralHash { values } => self.eval_map(values, env),
-            RawExpressionKind::LiteralFunction { parameters, body } => {
+            RawExpressionKind::LiteralArray(LiteralArray { values }) => self.eval_list(values, env),
+            RawExpressionKind::LiteralHash(LiteralHash { values }) => self.eval_map(values, env),
+            RawExpressionKind::LiteralFunction(LiteralFunction { parameters, body }) => {
                 self.eval_function(parameters, body, env)
             }
 
             RawExpressionKind::Parenthesized { expr } => self.eval_expr(expr, env),
-            RawExpressionKind::Unary { op, expr } => self.eval_unary(op, expr, env),
-            RawExpressionKind::Binary { op, left, right } => self.eval_binary(op, left, right, env),
+            RawExpressionKind::Unary(Unary { op, expr }) => self.eval_unary(op, expr, env),
+            RawExpressionKind::Binary(Binary { op, left, right }) => self.eval_binary(op, left, right, env),
 
-            RawExpressionKind::Conditional { condition, positive, negative } => {
+            RawExpressionKind::Conditional(Conditional { condition, positive, negative }) => {
                 self.eval_conditional(condition, positive, negative, env)
             }
-            RawExpressionKind::Call { function, arguments } => {
+            RawExpressionKind::Call(Call { function, arguments }) => {
                 self.eval_call(function, arguments, env)
             }
-            RawExpressionKind::IndexExpression { left, idx } => self.eval_index(left, idx, env),
+            RawExpressionKind::IndexExpression(IndexExpression { left, idx }) => self.eval_index(left, idx, env),
             RawExpressionKind::IllegalExpression => todo!(),
         }
     }

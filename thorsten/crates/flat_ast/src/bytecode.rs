@@ -1,4 +1,4 @@
-use crate::parser::{CompUnit, ExpressionId, RawExpression, RawExpressionKind, RawStatement, RawStatementKind, StatementId, UnaryOp};
+use crate::parser::{Binary, Call, CompUnit, Conditional, ExpressionId, ExprStmt, IndexExpression, LetStmt, LiteralArray, LiteralFunction, LiteralHash, RawExpression, RawExpressionKind, RawStatement, RawStatementKind, ReturnStmt, StatementId, Unary, UnaryOp};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ConstantId(pub u16);
@@ -119,15 +119,17 @@ impl Compiler {
     fn compile_statement(&self, unit: &CompUnit, statement: StatementId, res: &mut Bytecode) {
         let RawStatement { kind, .. } = unit.statement(statement);
         match kind {
-            RawStatementKind::LetStmt { name, expr } => todo!(),
-            RawStatementKind::ReturnStmt { expr } => todo!(),
-            RawStatementKind::ExprStmt { expr } => {
-                self.compile_expr(unit, *expr, res);
-                res.emit(Operation::Pop())
-            }
+            RawStatementKind::LetStmt(LetStmt { name, expr }) => todo!(),
+            RawStatementKind::ReturnStmt(ReturnStmt { expr }) => todo!(),
+            RawStatementKind::ExprStmt(stmt) => self.compile_expr_statement(unit, res, stmt),
             RawStatementKind::IllegalStatement => todo!(),
             RawStatementKind::EndStatement => {}
         }
+    }
+
+    fn compile_expr_statement(&self, unit: &CompUnit, res: &mut Bytecode, expr: &ExprStmt) {
+        self.compile_expr(unit, expr.expr, res);
+        res.emit(Operation::Pop())
     }
 
     fn compile_expr(&self, unit: &CompUnit, expr: ExpressionId, res: &mut Bytecode) {
@@ -146,7 +148,7 @@ impl Compiler {
                 true => res.emit(Operation::True()),
                 false => res.emit(Operation::False()),
             },
-            RawExpressionKind::Binary { op, left, right } => {
+            RawExpressionKind::Binary(Binary { op, left, right }) => {
                 self.compile_expr(unit, *left, res);
                 self.compile_expr(unit, *right, res);
                 match op {
@@ -165,11 +167,11 @@ impl Compiler {
             }
             RawExpressionKind::LiteralString => todo!(),
             RawExpressionKind::Parenthesized { expr } => self.compile_expr(unit, *expr, res),
-            RawExpressionKind::LiteralFunction { parameters, body } => todo!(),
-            RawExpressionKind::LiteralArray { values } => todo!(),
-            RawExpressionKind::LiteralHash { values } => todo!(),
+            RawExpressionKind::LiteralFunction(LiteralFunction { parameters, body }) => todo!(),
+            RawExpressionKind::LiteralArray(LiteralArray { values }) => todo!(),
+            RawExpressionKind::LiteralHash(LiteralHash { values }) => todo!(),
             RawExpressionKind::Identifier => todo!(),
-            RawExpressionKind::Unary { op, expr } => {
+            RawExpressionKind::Unary(Unary { op, expr }) => {
                 self.compile_expr(unit, *expr, res);
                 match op {
                     UnaryOp::OpNot => res.emit(Operation::Not()),
@@ -177,7 +179,7 @@ impl Compiler {
                 }
             }
 
-            RawExpressionKind::Conditional { condition, positive, negative } => {
+            RawExpressionKind::Conditional(Conditional { condition, positive, negative }) => {
                 self.compile_expr(unit, *condition, res);
 
                 let first_idx = {
@@ -206,8 +208,8 @@ impl Compiler {
                     }
                 }
             }
-            RawExpressionKind::Call { function, arguments } => todo!(),
-            RawExpressionKind::IndexExpression { left, idx } => todo!(),
+            RawExpressionKind::Call(Call { function, arguments }) => todo!(),
+            RawExpressionKind::IndexExpression(IndexExpression { left, idx }) => todo!(),
             RawExpressionKind::IllegalExpression => todo!(),
         }
     }

@@ -21,9 +21,9 @@ pub struct RawExpression {
 
 #[derive(Debug)]
 pub enum RawStatementKind {
-    LetStmt { name: ExpressionId, expr: ExpressionId },
-    ReturnStmt { expr: ExpressionId },
-    ExprStmt { expr: ExpressionId },
+    LetStmt(LetStmt),
+    ReturnStmt(ReturnStmt),
+    ExprStmt(ExprStmt),
     IllegalStatement,
     EndStatement,
 }
@@ -33,73 +33,90 @@ pub enum RawExpressionKind {
     LiteralInteger,
     LiteralString,
     LiteralBoolean,
-    Parenthesized {
-        expr: ExpressionId,
-    },
-    LiteralFunction {
-        parameters: Vec<ExpressionId>,
-        body: Vec<StatementId>,
-    },
-    LiteralArray {
-        values: Vec<ExpressionId>,
-    },
-    LiteralHash {
-        values: Vec<(ExpressionId, ExpressionId)>,
-    },
+    Parenthesized { expr: ExpressionId },
+    LiteralFunction(LiteralFunction),
+    LiteralArray(LiteralArray),
+    LiteralHash(LiteralHash),
     Identifier,
-    Unary {
-        op: UnaryOp,
-        expr: ExpressionId,
-    },
-    Binary {
-        op: BinaryOp,
-        left: ExpressionId,
-        right: ExpressionId,
-    },
-    Conditional {
-        condition: ExpressionId,
-        positive: Vec<StatementId>,
-        negative: Vec<StatementId>,
-    },
-    Call {
-        function: ExpressionId,
-        arguments: Vec<ExpressionId>,
-    },
-    IndexExpression {
-        left: ExpressionId,
-        idx: ExpressionId,
-    },
+    Unary(Unary),
+    Binary(Binary),
+    Conditional(Conditional),
+    Call(Call),
+    IndexExpression(IndexExpression),
     IllegalExpression,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Ord, PartialOrd)]
-pub enum UnaryOp {
-    OpNot,
-    OpNeg,
-}
+pub enum UnaryOp { OpNot, OpNeg }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Ord, PartialOrd)]
-pub enum BinaryOp {
-    Plus,
-    Minus,
-    Times,
-    Div,
-    Greater,
-    Lesser,
-    Equals,
-    Differs,
-}
+pub enum BinaryOp { Plus, Minus, Times, Div, Greater, Lesser, Equals, Differs }
 
 #[derive(Clone, Copy, PartialOrd, PartialEq)]
-enum Precedence {
-    Lowest,
-    Equals,
-    LesserGreater,
-    Sum,
-    Product,
-    Prefix,
-    Apply,
-    Index,
+enum Precedence { Lowest, Equals, LesserGreater, Sum, Product, Prefix, Apply, Index }
+
+#[derive(Debug)]
+pub struct LiteralFunction {
+    pub parameters: Vec<ExpressionId>,
+    pub body: Vec<StatementId>,
+}
+
+#[derive(Debug)]
+pub struct LiteralArray {
+    pub values: Vec<ExpressionId>,
+}
+
+#[derive(Debug)]
+pub struct LiteralHash {
+    pub values: Vec<(ExpressionId, ExpressionId)>,
+}
+
+#[derive(Debug)]
+pub struct Unary {
+    pub op: UnaryOp,
+    pub expr: ExpressionId,
+}
+
+#[derive(Debug)]
+pub struct Binary {
+    pub op: BinaryOp,
+    pub left: ExpressionId,
+    pub right: ExpressionId,
+}
+
+#[derive(Debug)]
+pub struct Conditional {
+    pub condition: ExpressionId,
+    pub positive: Vec<StatementId>,
+    pub negative: Vec<StatementId>,
+}
+
+#[derive(Debug)]
+pub struct Call {
+    pub function: ExpressionId,
+    pub arguments: Vec<ExpressionId>,
+}
+
+#[derive(Debug)]
+pub struct IndexExpression {
+    pub left: ExpressionId,
+    pub idx: ExpressionId,
+}
+
+#[derive(Debug)]
+pub struct LetStmt {
+    pub name: ExpressionId,
+    pub expr: ExpressionId,
+}
+
+#[derive(Debug)]
+pub struct ReturnStmt {
+    pub expr: ExpressionId,
+}
+
+#[derive(Debug)]
+pub struct ExprStmt {
+    pub expr: ExpressionId,
 }
 
 impl From<&TokenKind> for Precedence {
@@ -237,14 +254,14 @@ fn expression_after(
             RawExpression { range, kind: RawExpressionKind::LiteralString }
         }
 
-        RawToken { kind: TokenKind::If, ref range } => conditional_expression(input, range, table),
+        RawToken { kind: TokenKind::If, range } => conditional_expression(input, &range, table),
 
-        RawToken { kind: TokenKind::Function, ref range } => {
-            function_expression(input, range, table)
+        RawToken { kind: TokenKind::Function, range } => {
+            function_expression(input, &range, table)
         }
 
-        RawToken { kind, ref range } if matches!(kind, TokenKind::Bang | TokenKind::Minus) => {
-            unary_expression(input, range, kind, table)
+        RawToken { kind, range } if matches!(kind, TokenKind::Bang | TokenKind::Minus) => {
+            unary_expression(input, &range, kind, table)
         }
 
         RawToken { kind: TokenKind::Lparen, .. } => parenthesized_expression(input, range, table),
@@ -258,8 +275,8 @@ fn expression_after(
     };
 
     loop {
-        let RawToken { ref kind, .. } = token_after(input, &left_expr.range);
-        let next_precedence = Precedence::from(kind);
+        let RawToken { kind, .. } = token_after(input, &left_expr.range);
+        let next_precedence = Precedence::from(&kind);
         if precedence >= next_precedence {
             break;
         }
@@ -286,15 +303,15 @@ fn expression_after(
 
 fn statement_after(input: &str, start: &Range, table: &mut ExprTable) -> RawStatement {
     let statement = match token_after(input, start) {
-        RawToken { kind: TokenKind::Return, ref range } => return_statement(input, range, table),
-        RawToken { kind: TokenKind::Let, ref range } => let_statement(input, range, table),
-        RawToken { kind: TokenKind::Eof, ref range } => end_statement(input, range, table),
+        RawToken { kind: TokenKind::Return, range } => return_statement(input, &range, table),
+        RawToken { kind: TokenKind::Let, range } => let_statement(input, &range, table),
+        RawToken { kind: TokenKind::Eof, range } => end_statement(input, &range, table),
         _ => expression_statement(input, start, table),
     };
 
     match token_after(input, &statement.range) {
-        RawToken { kind: TokenKind::Semicolon, ref range } => RawStatement {
-            range: Range::merge(&statement.range, range),
+        RawToken { kind: TokenKind::Semicolon, range } => RawStatement {
+            range: Range::merge(&statement.range, &range),
             ..statement
         },
         _ => statement,
@@ -307,7 +324,7 @@ fn binary_expression(
     table: &mut ExprTable,
     next_precedence: Precedence,
 ) -> RawExpression {
-    let RawToken { ref kind, ref range } = token_after(input, &left.range);
+    let RawToken { kind, range } = token_after(input, &left.range);
     let op = match kind {
         TokenKind::Plus => BinaryOp::Plus,
         TokenKind::Minus => BinaryOp::Minus,
@@ -319,20 +336,20 @@ fn binary_expression(
         TokenKind::Differs => BinaryOp::Differs,
         _ => {
             return RawExpression {
-                range: Range::merge(&left.range, range),
+                range: Range::merge(&left.range, &range),
                 kind: RawExpressionKind::IllegalExpression,
             }
         }
     };
 
-    let right = expression_after(input, range, table, next_precedence);
+    let right = expression_after(input, &range, table, next_precedence);
     RawExpression {
         range: Range::merge(&left.range, &right.range),
-        kind: RawExpressionKind::Binary {
+        kind: RawExpressionKind::Binary(Binary {
             op,
             left: table.add_expression(left),
             right: table.add_expression(right),
-        },
+        }),
     }
 }
 
@@ -351,10 +368,10 @@ fn index_expression(input: &str, left: RawExpression, table: &mut ExprTable) -> 
 
     RawExpression {
         range: Range::merge(&left.range, &right_bracket.range),
-        kind: RawExpressionKind::IndexExpression {
+        kind: RawExpressionKind::IndexExpression(IndexExpression {
             left: table.add_expression(left),
             idx: table.add_expression(expr),
-        },
+        }),
     }
 }
 
@@ -363,20 +380,20 @@ fn call_expression(input: &str, left: RawExpression, table: &mut ExprTable) -> R
         Ok(t) => t,
         Err(e) => return e,
     };
-    let ExpressionList { ref range, expressions } =
+    let ExpressionList { range, expressions } =
         expression_list(input, &left_paren.range, table, TokenKind::Rparen);
 
-    let right_paren = match expect_token(input, &left.range, range, TokenKind::Rparen) {
+    let right_paren = match expect_token(input, &left.range, &range, TokenKind::Rparen) {
         Ok(t) => t,
         Err(e) => return e,
     };
 
     RawExpression {
         range: Range::merge(&left.range, &right_paren.range),
-        kind: RawExpressionKind::Call {
+        kind: RawExpressionKind::Call(Call {
             function: table.add_expression(left),
             arguments: expressions,
-        },
+        }),
     }
 }
 
@@ -386,17 +403,17 @@ fn array_expression(input: &str, start: &Range, table: &mut ExprTable) -> RawExp
         Err(expr) => return expr,
     };
 
-    let ExpressionList { ref range, expressions } =
+    let ExpressionList { range, expressions } =
         expression_list(input, &left_brace.range, table, TokenKind::RBracket);
 
-    let right_brace = match expect_token(input, start, range, TokenKind::RBracket) {
+    let right_brace = match expect_token(input, start, &range, TokenKind::RBracket) {
         Ok(token) => token,
         Err(expr) => return expr,
     };
 
     RawExpression {
         range: Range::merge(start, &right_brace.range),
-        kind: RawExpressionKind::LiteralArray { values: expressions },
+        kind: RawExpressionKind::LiteralArray(LiteralArray { values: expressions }),
     }
 }
 
@@ -417,9 +434,7 @@ fn hash_expression(input: &str, start: &Range, table: &mut ExprTable) -> RawExpr
         let key = expression_after(input, &current, table, Precedence::Lowest);
         let value = match expect_token(input, start, &key.range, TokenKind::Colon) {
             Err(e) => return e,
-            Ok(RawToken { ref range, .. }) => {
-                expression_after(input, range, table, Precedence::Lowest)
-            }
+            Ok(RawToken { range, .. }) => expression_after(input, &range, table, Precedence::Lowest)
         };
 
         if let RawToken { kind: TokenKind::Comma, range } = token_after(input, &value.range) {
@@ -433,7 +448,7 @@ fn hash_expression(input: &str, start: &Range, table: &mut ExprTable) -> RawExpr
 
     RawExpression {
         range: Range::merge(start, &current),
-        kind: RawExpressionKind::LiteralHash { values },
+        kind: RawExpressionKind::LiteralHash(LiteralHash { values }),
     }
 }
 
@@ -451,15 +466,15 @@ fn function_expression(input: &str, start: &Range, table: &mut ExprTable) -> Raw
         Err(expr) => return expr,
     };
 
-    let StatementBlock { statements, ref range } =
+    let StatementBlock { statements, range } =
         match statement_block(input, &right_paren.range, table) {
             Ok(block) => block,
             Err(e) => return e,
         };
 
     RawExpression {
-        range: Range::merge(start, range),
-        kind: RawExpressionKind::LiteralFunction { parameters: expressions, body: statements },
+        range: Range::merge(start, &range),
+        kind: RawExpressionKind::LiteralFunction(LiteralFunction { parameters: expressions, body: statements }),
     }
 }
 
@@ -481,12 +496,12 @@ fn conditional_expression(input: &str, start: &Range, table: &mut ExprTable) -> 
         Err(expr) => return expr,
     };
 
-    let StatementBlock { statements, ref range } = {
-        let RawToken { kind, ref range } = token_after(input, &positive.range);
+    let StatementBlock { statements, range } = {
+        let RawToken { kind, range } = token_after(input, &positive.range);
         if kind != TokenKind::Else {
             StatementBlock { statements: vec![], range: positive.range }
         } else {
-            match statement_block(input, range, table) {
+            match statement_block(input, &range, table) {
                 Ok(t) => t,
                 Err(expr) => return expr,
             }
@@ -494,12 +509,12 @@ fn conditional_expression(input: &str, start: &Range, table: &mut ExprTable) -> 
     };
 
     RawExpression {
-        range: Range::merge(start, range),
-        kind: RawExpressionKind::Conditional {
+        range: Range::merge(start, &range),
+        kind: RawExpressionKind::Conditional(Conditional {
             condition: table.add_expression(condition),
             positive: positive.statements,
             negative: statements,
-        },
+        }),
     }
 }
 
@@ -537,7 +552,7 @@ fn unary_expression(
     let expr = expression_after(input, start, table, Precedence::Prefix);
     RawExpression {
         range: Range::merge(start, &expr.range),
-        kind: RawExpressionKind::Unary { op, expr: table.add_expression(expr) },
+        kind: RawExpressionKind::Unary(Unary { op, expr: table.add_expression(expr) }),
     }
 }
 
@@ -567,10 +582,10 @@ fn let_statement(input: &str, start: &Range, table: &mut ExprTable) -> RawStatem
     let expr = expression_after(input, &eq.range, table, Precedence::Lowest);
     RawStatement {
         range: Range::merge(start, &expr.range),
-        kind: RawStatementKind::LetStmt {
+        kind: RawStatementKind::LetStmt(LetStmt {
             name: table.add_expression(ident),
             expr: table.add_expression(expr),
-        },
+        }),
     }
 }
 
@@ -578,7 +593,7 @@ fn return_statement(input: &str, start: &Range, table: &mut ExprTable) -> RawSta
     let expression = expression_after(input, start, table, Precedence::Lowest);
     RawStatement {
         range: Range::merge(start, &expression.range),
-        kind: RawStatementKind::ReturnStmt { expr: table.add_expression(expression) },
+        kind: RawStatementKind::ReturnStmt(ReturnStmt { expr: table.add_expression(expression) }),
     }
 }
 
@@ -593,18 +608,8 @@ fn expression_statement(input: &str, start: &Range, table: &mut ExprTable) -> Ra
     let expr = expression_after(input, start, table, Precedence::Lowest);
     RawStatement {
         range: expr.range,
-        kind: RawStatementKind::ExprStmt { expr: table.add_expression(expr) },
+        kind: RawStatementKind::ExprStmt(ExprStmt { expr: table.add_expression(expr) }),
     }
-}
-
-struct StatementBlock {
-    statements: Vec<StatementId>,
-    range: Range,
-}
-
-struct ExpressionList {
-    range: Range,
-    expressions: Vec<ExpressionId>,
 }
 
 fn statement_block(
@@ -676,11 +681,21 @@ fn expect_token(
 ) -> Result<RawToken, RawExpression> {
     match token_after(input, range) {
         t if t.kind == expected => Ok(t),
-        RawToken { kind: _kind, ref range } => Err(RawExpression {
-            range: Range::merge(start, range),
+        RawToken { kind: _kind, range } => Err(RawExpression {
+            range: Range::merge(start, &range),
             kind: RawExpressionKind::IllegalExpression,
         }),
     }
+}
+
+struct StatementBlock {
+    statements: Vec<StatementId>,
+    range: Range,
+}
+
+struct ExpressionList {
+    range: Range,
+    expressions: Vec<ExpressionId>,
 }
 
 #[cfg(test)]
@@ -692,6 +707,7 @@ mod tests {
         },
         range::Range,
     };
+    use crate::parser::{ExprStmt, LetStmt, ReturnStmt};
 
     #[derive(Debug, PartialEq, Eq, Clone, Ord, PartialOrd)]
     struct Statement {
@@ -771,15 +787,15 @@ mod tests {
             kind: match statement.kind {
                 RawStatementKind::EndStatement => StatementKind::EndStatement {},
                 RawStatementKind::IllegalStatement => StatementKind::IllegalStatement {},
-                RawStatementKind::LetStmt { name, expr } => StatementKind::LetStmt {
-                    name: lookup_expression(input, name, &table),
-                    expr: lookup_expression(input, expr, &table),
+                RawStatementKind::LetStmt(stmt) => StatementKind::LetStmt {
+                    name: lookup_expression(input, stmt.name, &table),
+                    expr: lookup_expression(input, stmt.expr, &table),
                 },
-                RawStatementKind::ReturnStmt { expr } => {
-                    StatementKind::ReturnStmt { expr: lookup_expression(input, expr, &table) }
-                }
-                RawStatementKind::ExprStmt { expr } => {
-                    StatementKind::ExprStmt { expr: lookup_expression(input, expr, &table) }
+                RawStatementKind::ReturnStmt(stmt) => StatementKind::ReturnStmt {
+                    expr: lookup_expression(input, stmt.expr, &table)
+                },
+                RawStatementKind::ExprStmt(stmt) => StatementKind::ExprStmt {
+                    expr: lookup_expression(input, stmt.expr, &table)
                 }
             },
         }
@@ -795,27 +811,25 @@ mod tests {
                 RawExpressionKind::LiteralBoolean => ExpressionKind::LiteralBoolean,
                 RawExpressionKind::Identifier => ExpressionKind::Identifier,
                 RawExpressionKind::IllegalExpression => ExpressionKind::IllegalExpression,
-                RawExpressionKind::LiteralFunction { parameters, body } => {
-                    ExpressionKind::LiteralFunction {
-                        parameters: parameters
-                            .iter()
-                            .map(|p| lookup_expression(input, *p, table))
-                            .map(|e| e.content)
-                            .collect(),
-                        body: body
-                            .iter()
-                            .map(|p| lookup_statement(input, *p, table))
-                            .collect(),
-                    }
-                }
-                RawExpressionKind::LiteralArray { values } => ExpressionKind::LiteralArray {
-                    values: values
+                RawExpressionKind::LiteralFunction(function) => ExpressionKind::LiteralFunction {
+                    parameters: function.parameters
+                        .iter()
+                        .map(|p| lookup_expression(input, *p, table))
+                        .map(|e| e.content)
+                        .collect(),
+                    body: function.body
+                        .iter()
+                        .map(|p| lookup_statement(input, *p, table))
+                        .collect(),
+                },
+                RawExpressionKind::LiteralArray(array) => ExpressionKind::LiteralArray {
+                    values: array.values
                         .iter()
                         .map(|p| lookup_expression(input, *p, table))
                         .collect(),
                 },
-                RawExpressionKind::LiteralHash { values } => ExpressionKind::LiteralHash {
-                    values: values
+                RawExpressionKind::LiteralHash(hash) => ExpressionKind::LiteralHash {
+                    values: hash.values
                         .iter()
                         .map(|(k, v)| {
                             (
@@ -825,41 +839,37 @@ mod tests {
                         })
                         .collect(),
                 },
-                RawExpressionKind::Unary { op, expr } => ExpressionKind::Unary {
-                    op: *op,
-                    expr: lookup_expression(input, *expr, table).into(),
+                RawExpressionKind::Unary(unary) => ExpressionKind::Unary {
+                    op: unary.op,
+                    expr: lookup_expression(input, unary.expr, table).into(),
                 },
-                RawExpressionKind::Binary { op, left, right } => ExpressionKind::Binary {
-                    op: *op,
-                    left: lookup_expression(input, *left, table).into(),
-                    right: lookup_expression(input, *right, table).into(),
+                RawExpressionKind::Binary(binary) => ExpressionKind::Binary {
+                    op: binary.op,
+                    left: lookup_expression(input, binary.left, table).into(),
+                    right: lookup_expression(input, binary.right, table).into(),
                 },
-                RawExpressionKind::Conditional { condition, positive, negative } => {
-                    ExpressionKind::Conditional {
-                        condition: lookup_expression(input, *condition, table).into(),
-                        positive: positive
+                RawExpressionKind::Conditional(cond) => ExpressionKind::Conditional {
+                    condition: lookup_expression(input, cond.condition, table).into(),
+                    positive: cond.positive
                             .iter()
                             .map(|p| lookup_statement(input, *p, table))
                             .collect(),
-                        negative: negative
+                    negative: cond.negative
                             .iter()
                             .map(|p| lookup_statement(input, *p, table))
                             .collect(),
-                    }
-                }
-                RawExpressionKind::Call { function, arguments } => ExpressionKind::Call {
-                    function: lookup_expression(input, *function, table).into(),
-                    arguments: arguments
+                },
+                RawExpressionKind::Call(call) => ExpressionKind::Call {
+                    function: lookup_expression(input, call.function, table).into(),
+                    arguments: call.arguments
                         .iter()
                         .map(|a| lookup_expression(input, *a, table))
                         .collect(),
                 },
-                RawExpressionKind::IndexExpression { left, idx } => {
-                    ExpressionKind::IndexExpression {
-                        left: lookup_expression(input, *left, table).into(),
-                        idx: lookup_expression(input, *idx, table).into(),
-                    }
-                }
+                RawExpressionKind::IndexExpression(index) => ExpressionKind::IndexExpression {
+                    left: lookup_expression(input, index.left, table).into(),
+                    idx: lookup_expression(input, index.idx, table).into(),
+                },
                 RawExpressionKind::Parenthesized { expr } => ExpressionKind::Parenthesized {
                     expression: lookup_expression(input, *expr, table).into(),
                 },
@@ -872,14 +882,14 @@ mod tests {
         Statement {
             content: input[range.start..range.end].into(),
             kind: match kind {
-                RawStatementKind::LetStmt { name, expr } => StatementKind::LetStmt {
+                RawStatementKind::LetStmt(LetStmt { name, expr }) => StatementKind::LetStmt {
                     name: lookup_expression(input, *name, table),
                     expr: lookup_expression(input, *expr, table),
                 },
-                RawStatementKind::ReturnStmt { expr } => {
+                RawStatementKind::ReturnStmt(ReturnStmt { expr }) => {
                     StatementKind::ReturnStmt { expr: lookup_expression(input, *expr, table) }
                 }
-                RawStatementKind::ExprStmt { expr } => {
+                RawStatementKind::ExprStmt(ExprStmt { expr }) => {
                     StatementKind::ExprStmt { expr: lookup_expression(input, *expr, table) }
                 }
                 RawStatementKind::IllegalStatement => StatementKind::IllegalStatement,
