@@ -1,4 +1,5 @@
-use crate::parser::{Binary, Call, CompUnit, Conditional, ExpressionId, ExprStmt, IndexExpression, LetStmt, LiteralArray, LiteralFunction, LiteralHash, RawExpression, RawExpressionKind, RawStatement, RawStatementKind, ReturnStmt, StatementId, Unary, UnaryOp};
+use crate::parser::{BinaryOp, CompUnit, Conditional, ExpressionId, RawExpression, RawExpressionKind, RawStatement, RawStatementKind, StatementId, UnaryOp};
+use crate::range::Range;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ConstantId(pub u16);
@@ -119,107 +120,115 @@ impl Compiler {
     fn compile_statement(&self, unit: &CompUnit, statement: StatementId, res: &mut Bytecode) {
         let RawStatement { kind, .. } = unit.statement(statement);
         match kind {
-            RawStatementKind::LetStmt(LetStmt { name, expr }) => todo!(),
-            RawStatementKind::ReturnStmt(ReturnStmt { expr }) => todo!(),
-            RawStatementKind::ExprStmt(stmt) => self.compile_expr_statement(unit, res, stmt),
+            RawStatementKind::LetStmt(stmt) => todo!(),
+            RawStatementKind::ReturnStmt(stmt) => todo!(),
             RawStatementKind::IllegalStatement => todo!(),
             RawStatementKind::EndStatement => {}
+            RawStatementKind::ExprStmt(stmt) => {
+                self.compile_expr(unit, res, stmt.expr);
+                res.emit(Operation::Pop())
+            }
         }
     }
 
-    fn compile_expr_statement(&self, unit: &CompUnit, res: &mut Bytecode, expr: &ExprStmt) {
-        self.compile_expr(unit, expr.expr, res);
-        res.emit(Operation::Pop())
-    }
-
-    fn compile_expr(&self, unit: &CompUnit, expr: ExpressionId, res: &mut Bytecode) {
+    fn compile_expr(&self, unit: &CompUnit, res: &mut Bytecode, expr: ExpressionId) {
         let RawExpression { range, kind } = unit.expression(expr);
         match kind {
-            RawExpressionKind::LiteralInteger => {
-                let value = unit.int(range).unwrap();
-                let value = ByteObj::Int(value);
+            RawExpressionKind::LiteralInteger => Self::compile_integer(unit, res, range),
+            RawExpressionKind::LiteralBoolean => Self::compile_boolean(unit, res, range),
+            RawExpressionKind::Parenthesized { expr } => self.compile_expr(unit, res, *expr),
+            RawExpressionKind::Conditional(cond) => self.compile_conditional(unit, res, cond),
 
-                let id = res.add(value);
-                let id = Operation::Cte(id);
-                res.emit(id);
+            RawExpressionKind::Unary(unary) => {
+                self.compile_expr(unit, res, unary.expr);
+                Self::compile_unary(res, unary.op);
             }
 
-            RawExpressionKind::LiteralBoolean => match unit.bool(range).unwrap() {
-                true => res.emit(Operation::True()),
-                false => res.emit(Operation::False()),
+            RawExpressionKind::Binary(binary) => {
+                self.compile_expr(unit, res, binary.left);
+                self.compile_expr(unit, res, binary.right);
+                Self::compile_binary(res, binary.op)
             },
-            RawExpressionKind::Binary(Binary { op, left, right }) => {
-                self.compile_expr(unit, *left, res);
-                self.compile_expr(unit, *right, res);
-                match op {
-                    crate::parser::BinaryOp::Plus => res.emit(Operation::Add()),
-                    crate::parser::BinaryOp::Minus => res.emit(Operation::Sub()),
-                    crate::parser::BinaryOp::Times => res.emit(Operation::Mul()),
-                    crate::parser::BinaryOp::Div => res.emit(Operation::Div()),
-                    crate::parser::BinaryOp::Greater => res.emit(Operation::Gt()),
-                    crate::parser::BinaryOp::Lesser => {
-                        res.swap();
-                        res.emit(Operation::Gt())
-                    }
-                    crate::parser::BinaryOp::Equals => res.emit(Operation::Eq()),
-                    crate::parser::BinaryOp::Differs => res.emit(Operation::Neq()),
-                }
-            }
-            RawExpressionKind::LiteralString => todo!(),
-            RawExpressionKind::Parenthesized { expr } => self.compile_expr(unit, *expr, res),
-            RawExpressionKind::LiteralFunction(LiteralFunction { parameters, body }) => todo!(),
-            RawExpressionKind::LiteralArray(LiteralArray { values }) => todo!(),
-            RawExpressionKind::LiteralHash(LiteralHash { values }) => todo!(),
+
             RawExpressionKind::Identifier => todo!(),
-            RawExpressionKind::Unary(Unary { op, expr }) => {
-                self.compile_expr(unit, *expr, res);
-                match op {
-                    UnaryOp::OpNot => res.emit(Operation::Not()),
-                    UnaryOp::OpNeg => res.emit(Operation::Neg()),
-                }
-            }
-
-            RawExpressionKind::Conditional(Conditional { condition, positive, negative }) => {
-                self.compile_expr(unit, *condition, res);
-
-                let first_idx = {
-                    res.emit(Operation::JumpUnless(BytePosition(9999)));
-                    let first_idx = res.index();
-                    self.compile_block(unit, positive, res);
-
-                    if let Some(Operation::Pop()) = res.last() {
-                        res.pop();
-                    }
-                    if !negative.is_empty() {
-                        res.emit(Operation::Jump(BytePosition(9999)))
-                    }
-
-                    first_idx
-                };
-
-                res.set(first_idx, Operation::JumpUnless(res.position()));
-
-                if !negative.is_empty() {
-                    let second_idx = res.index();
-                    self.compile_block(unit, negative, res);
-                    res.set(second_idx, Operation::Jump(res.position()));
-                    if let Some(Operation::Pop()) = res.last() {
-                        res.pop();
-                    }
-                }
-            }
-            RawExpressionKind::Call(Call { function, arguments }) => todo!(),
-            RawExpressionKind::IndexExpression(IndexExpression { left, idx }) => todo!(),
+            RawExpressionKind::Call(call) => todo!(),
+            RawExpressionKind::LiteralString => todo!(),
+            RawExpressionKind::LiteralHash(hash) => todo!(),
             RawExpressionKind::IllegalExpression => todo!(),
+            RawExpressionKind::LiteralArray(array) => todo!(),
+            RawExpressionKind::IndexExpression(index) => todo!(),
+            RawExpressionKind::LiteralFunction(function) => todo!(),
         }
     }
 
-    fn compile_integer(&self, source: &str, res: &mut Bytecode) {
-        let int = source.parse::<i64>().unwrap();
-        let obj = ByteObj::Int(int);
-        let id = res.constants.len();
-        res.constants.push(obj);
-        res.emit(Operation::Cte(ConstantId(id as u16)))
+    fn compile_conditional(&self, unit: &CompUnit, res: &mut Bytecode, cond: &Conditional) {
+        self.compile_expr(unit, res, cond.condition);
+
+        let first_idx = {
+            res.emit(Operation::JumpUnless(BytePosition(9999)));
+            let first_idx = res.index();
+            self.compile_block(unit, &cond.positive, res);
+
+            if let Some(Operation::Pop()) = res.last() {
+                res.pop();
+            }
+            if !cond.negative.is_empty() {
+                res.emit(Operation::Jump(BytePosition(9999)))
+            }
+
+            first_idx
+        };
+
+        res.set(first_idx, Operation::JumpUnless(res.position()));
+
+        if !cond.negative.is_empty() {
+            let second_idx = res.index();
+            self.compile_block(unit, &cond.negative, res);
+            res.set(second_idx, Operation::Jump(res.position()));
+            if let Some(Operation::Pop()) = res.last() {
+                res.pop();
+            }
+        }
+    }
+
+    fn compile_unary(res: &mut Bytecode, op: UnaryOp) {
+        match op {
+            UnaryOp::OpNot => res.emit(Operation::Not()),
+            UnaryOp::OpNeg => res.emit(Operation::Neg()),
+        }
+    }
+
+    fn compile_binary(res: &mut Bytecode, op: BinaryOp) {
+        let emit = match op {
+            BinaryOp::Plus => Operation::Add(),
+            BinaryOp::Minus => Operation::Sub(),
+            BinaryOp::Times => Operation::Mul(),
+            BinaryOp::Div => Operation::Div(),
+            BinaryOp::Equals => Operation::Eq(),
+            BinaryOp::Differs => Operation::Neq(),
+            BinaryOp::Greater => Operation::Gt(),
+            BinaryOp::Lesser => {
+                res.swap();
+                Operation::Gt()
+            }
+        };
+
+        res.emit(emit)
+    }
+
+    fn compile_boolean(unit: &CompUnit, res: &mut Bytecode, range: &Range) {
+        let emit = match unit.bool(range).unwrap() {
+            true => Operation::True(),
+            false => Operation::False(),
+        };
+
+        res.emit(emit)
+    }
+
+    fn compile_integer(unit: &CompUnit, res: &mut Bytecode, range: &Range) {
+        let value = unit.int(range).unwrap();
+        let id = res.add(ByteObj::Int(value));
+        res.emit(Operation::Cte(id));
     }
 
     fn compile_block(&self, unit: &CompUnit, block: &[StatementId], res: &mut Bytecode) {
